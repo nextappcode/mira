@@ -24,6 +24,7 @@ export default function App() {
   const [myId, setMyId] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<{id: string, name: string}[]>([]);
   const [accessStatus, setAccessStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
+  const [isConnected, setIsConnected] = useState(false);
   
   const isSharingRef = useRef(false);
   
@@ -76,6 +77,7 @@ export default function App() {
       socket.onopen = () => {
         console.log("WebSocket connected successfully");
         setStatus("Conectado al servidor");
+        setIsConnected(true);
       };
 
       socket.onmessage = async (event) => {
@@ -141,6 +143,7 @@ export default function App() {
       };
 
       socket.onclose = (event) => {
+        setIsConnected(false);
         console.log(`WebSocket closed: ${event.reason || 'No reason'}. Reconnecting in ${Math.min(10000, 3000 + (reconnectAttempts.current * 1000))}ms`);
         reconnectAttempts.current++;
         reconnectTimeout = window.setTimeout(connect, Math.min(10000, 3000 + (reconnectAttempts.current * 1000)));
@@ -392,8 +395,8 @@ export default function App() {
           <h1 className="text-xl font-bold tracking-tight">mira</h1>
         </div>
         <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 bg-zinc-900/50 px-3 py-1.5 rounded-full border border-zinc-800">
-          <div className={`w-2 h-2 rounded-full ${socketRef.current?.readyState === WebSocket.OPEN ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-          {socketRef.current?.readyState === WebSocket.OPEN ? 'SERVIDOR CONECTADO' : 'DESCONECTADO'}
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+          {isConnected ? 'SISTEMA ONLINE' : 'CONECTANDO...'}
         </div>
       </header>
 
