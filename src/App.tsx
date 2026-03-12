@@ -239,9 +239,17 @@ export default function App() {
       console.log("¡Pista de vídeo recibida! Mostrando en pantalla...");
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
-        // Force play just in case autoplay is blocked
-        remoteVideoRef.current.play().catch(e => console.warn("Autoplay block prevented immediate playback", e));
         
+        // Auto-play forces
+        remoteVideoRef.current.play().catch(e => console.warn("Autoplay block", e));
+        
+        // Auto-fullscreen logic
+        if (mode === "watch" && !document.fullscreenElement && videoContainerRef.current) {
+          videoContainerRef.current.requestFullscreen().catch(err => {
+            console.warn("No se pudo activar pantalla completa automáticamente:", err.message);
+          });
+        }
+
         const audioTracks = event.streams[0].getAudioTracks();
         setHasAudio(audioTracks.length > 0);
       }
@@ -347,6 +355,14 @@ export default function App() {
     
     setAccessStatus("requesting");
     setStatus("Solicitando acceso al emisor...");
+    
+    // Requesting fullscreen ahead of time to "prime" the user gesture
+    // Many browsers allow this if it's within the same click event
+    if (videoContainerRef.current && !document.fullscreenElement) {
+        videoContainerRef.current.requestFullscreen().catch(() => {
+          // Silent fail - we'll try again when the track arrives
+        });
+    }
     
     if (safeSend({ type: "join", room: roomId })) {
       safeSend({ type: "request-access", room: roomId, userName: "Usuario TV" });
@@ -640,7 +656,7 @@ export default function App() {
                     autoPlay 
                     playsInline 
                     muted={isMuted}
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-contain bg-zinc-950"
                   />
                   
                   {/* Controls Overlay */}
