@@ -148,10 +148,13 @@ async function startServer() {
     });
   });
 
-  // Enhanced production detection for Wasmer and other cloud providers
-  const isProduction = process.env.NODE_ENV === "production" || process.env.WASMER_ENV === "production" || !__dirname.includes("Downloads");
+  // Enhanced production detection
+  const isProd = process.env.NODE_ENV === "production" || 
+                 process.env.RENDER === "true" || 
+                 process.env.WASMER_ENV === "production" || 
+                 !__dirname.includes("Downloads");
 
-  if (!isProduction) {
+  if (!isProd) {
     console.log("[Server] Starting in DEVELOPMENT mode (Vite Middleware)");
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -159,19 +162,44 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(__dirname, "dist");
-    console.log(`[Server] Starting in PRODUCTION mode (Serving: ${distPath})`);
+    const distPath = path.resolve(__dirname, "dist");
+    console.log(`[Server] Starting in PRODUCTION mode (Directory: ${distPath})`);
     
-    if (!fs.existsSync(distPath)) {
-      console.error("[CRITICAL] 'dist' folder not found! Please run 'npm run build' before starting the server.");
+    // Diagnostic: List files in dist to help troubleshoot missing assets
+    if (fs.existsSync(distPath)) {
+      try {
+        const files = fs.readdirSync(distPath);
+        console.log(`[Server] Files in dist: ${files.join(", ")}`);
+        if (files.includes("assets")) {
+          const assets = fs.readdirSync(path.join(distPath, "assets"));
+          console.log(`[Server] Files in dist/assets: ${assets.join(", ")}`);
+        }
+      } catch (e) {
+        console.warn("[Server] Could not list dist files", e);
+      }
+    } else {
+      console.error("[CRITICAL] 'dist' folder NOT FOUND at " + distPath);
     }
 
-    app.use(express.static(distPath));
+    // Serve static files with proper caching
+    app.use(express.static(distPath, {
+      maxAge: '1d',
+      immutable: true,
+      index: false // We handle the root/catch-all manually below
+    }));
+
+    // Specific handler for assets to avoid MIME errors (don't serve index.html for missing assets)
+    app.get(["/assets/*", "*.css", "*.js", "*.png", "*.jpg", "*.svg"], (req, res) => {
+      res.status(404).send("Asset not found");
+    });
+
+    // Root and SPA catch-all
     app.get("*", (req, res) => {
-      if (fs.existsSync(path.join(distPath, "index.html"))) {
-        res.sendFile(path.join(distPath, "index.html"));
+      const indexFile = path.join(distPath, "index.html");
+      if (fs.existsSync(indexFile)) {
+        res.sendFile(indexFile);
       } else {
-        res.status(404).send("Application build files not found. Please run 'build' script.");
+        res.status(404).send("Application files not found. Ensure 'npm run build' was executed.");
       }
     });
   }
