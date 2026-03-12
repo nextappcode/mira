@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Monitor, Tv, Share2, Play, StopCircle, Copy, Check, Info, Maximize, Minimize, Volume2, VolumeX, UserPlus, X, ShieldCheck } from "lucide-react";
+import { Monitor, Tv, Share2, Play, StopCircle, Copy, Check, Info, Maximize, Minimize, Volume2, VolumeX, UserPlus, X, ShieldCheck, Pause, EyeOff, Eye, Users } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 const STUN_SERVERS = {
@@ -25,6 +25,8 @@ export default function App() {
   const [pendingRequests, setPendingRequests] = useState<{id: string, name: string}[]>([]);
   const [accessStatus, setAccessStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
   const [isConnected, setIsConnected] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [participants, setParticipants] = useState<{id: string, name: string}[]>([]);
   
   const isSharingRef = useRef(false);
   
@@ -91,9 +93,10 @@ export default function App() {
           } else if (message.type === "leave") {
             if (message.userId) {
               const pc = peerConnections.current.get(message.userId);
-              pc?.close();
-              peerConnections.current.delete(message.userId);
-            } else {
+               pc?.close();
+               peerConnections.current.delete(message.userId);
+               setParticipants(prev => prev.filter(p => p.id !== message.userId));
+             } else {
               setStatus("Transmisión finalizada por el emisor");
               if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
               setHasAudio(false);
@@ -125,6 +128,8 @@ export default function App() {
               });
               setStatus("Un usuario solicita acceso");
             }
+          } else if (message.type === "pause-state") {
+            setIsPaused(message.paused);
           }
         } catch (err) {
           // Silently handle JSON parse errors
@@ -230,10 +235,11 @@ export default function App() {
           setStatus("Conexión perdida");
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
           setHasAudio(false);
-        }
-        peerConnections.current.delete(targetId);
-      }
-    };
+         }
+         peerConnections.current.delete(targetId);
+         setParticipants(prev => prev.filter(p => p.id !== targetId));
+       }
+     };
 
     pc.ontrack = (event) => {
       console.log("¡Pista de vídeo recibida! Mostrando en pantalla...");
@@ -295,11 +301,18 @@ export default function App() {
     }
   };
 
-  const approveAccess = async (userId: string) => {
-    try {
-      setPendingRequests(prev => prev.filter(req => req.id !== userId));
-      
-      // Send approval
+   const approveAccess = async (userId: string) => {
+     try {
+       const request = pendingRequests.find(r => r.id === userId);
+       setPendingRequests(prev => prev.filter(req => req.id !== userId));
+       if (request) {
+         setParticipants(prev => {
+            if (prev.find(p => p.id === userId)) return prev;
+            return [...prev, request];
+         });
+       }
+       
+       // Send approval
       safeSend({ type: "access-response", targetId: userId, granted: true });
       
       // Prepare WebRTC for this specific user
@@ -341,10 +354,18 @@ export default function App() {
     safeSend({ type: "leave", room: roomId });
     streamRef.current?.getTracks().forEach(track => track.stop());
     peerConnections.current.forEach(pc => pc.close());
-    peerConnections.current.clear();
-    setIsSharing(false);
-    setStatus("Compartición finalizada");
+     peerConnections.current.clear();
+     setIsSharing(false);
+     setIsPaused(false);
+     setParticipants([]);
+     setStatus("Compartición finalizada");
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
+  };
+
+  const togglePause = () => {
+    const nextPaused = !isPaused;
+    setIsPaused(nextPaused);
+    safeSend({ type: "pause-state", room: roomId, paused: nextPaused });
   };
 
   const requestAccess = () => {
@@ -504,8 +525,16 @@ export default function App() {
                     autoPlay 
                     playsInline 
                     muted 
-                    className="w-full h-full object-contain"
+                    className={`w-full h-full object-contain transition-all duration-700 ${isPaused ? 'blur-2xl opacity-50 scale-105' : ''}`}
                   />
+                  {isPaused && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="bg-amber-500/20 backdrop-blur-md px-6 py-3 rounded-2xl border border-amber-500/30 flex items-center gap-3">
+                        <EyeOff className="text-amber-500" />
+                        <span className="text-amber-500 font-bold uppercase tracking-wider text-sm">Transmisión Oculta</span>
+                      </div>
+                    </div>
+                  )}
                   {!isSharing && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-600">
                       <Monitor size={48} className="mb-4 opacity-20" />
@@ -529,12 +558,21 @@ export default function App() {
                       <Share2 size={20} /> Compartir Pantalla
                     </button>
                   ) : (
-                    <button
-                      onClick={stopSharing}
-                      className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-4 px-8 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-500/20"
-                    >
-                      <StopCircle size={20} /> Detener Transmisión
-                    </button>
+                    <>
+                      <button
+                        onClick={togglePause}
+                        className={`flex-1 ${isPaused ? 'bg-amber-500 hover:bg-amber-400' : 'bg-zinc-800 hover:bg-zinc-700'} text-white font-bold py-4 px-8 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg ${isPaused ? 'shadow-amber-500/20' : ''}`}
+                      >
+                        {isPaused ? <Eye size={20} /> : <EyeOff size={20} />}
+                        {isPaused ? "Reanudar" : "Pausar Vista"}
+                      </button>
+                      <button
+                        onClick={stopSharing}
+                        className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-4 px-8 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-500/20"
+                      >
+                        <StopCircle size={20} /> Detener Transmisión
+                      </button>
+                    </>
                   )}
                   <button
                     onClick={() => { stopSharing(); setMode("home"); }}
@@ -549,7 +587,7 @@ export default function App() {
                   <motion.div 
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="mt-6 space-y-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl ring-2 ring-emerald-500/20 animate-pulse-subtle"
+                    className="mt-6 space-y-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl ring-2 ring-emerald-500/20"
                   >
                     <h3 className="text-xs font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2">
                       <UserPlus size={14} /> ¡Nueva solicitud de acceso! ({pendingRequests.length})
@@ -582,6 +620,54 @@ export default function App() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Active Participants & Monitor */}
+                {isSharing && participants.length > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-8 grid md:grid-cols-3 gap-6"
+                  >
+                    <div className="md:col-span-1 bg-zinc-950/50 border border-zinc-800 p-6 rounded-3xl">
+                      <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <Users size={14} /> Participantes ({participants.length})
+                      </h3>
+                      <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                        {participants.map(p => (
+                          <div key={p.id} className="flex items-center gap-3 bg-zinc-900/50 p-2 rounded-xl border border-zinc-800/50">
+                            <div className="w-8 h-8 bg-zinc-800 rounded-full flex items-center justify-center text-[10px] font-bold text-emerald-500">
+                              {p.name.charAt(0)}
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                                <span className="text-sm font-medium truncate">{p.name}</span>
+                                <span className="text-[9px] text-zinc-600 font-mono uppercase">En línea</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-2 bg-zinc-950/50 border border-zinc-800 p-4 rounded-3xl overflow-hidden shadow-inner">
+                       <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <Monitor size={14} /> Monitor de Salida (Lo que ven)
+                      </h3>
+                      <div className="aspect-video bg-black rounded-xl border border-zinc-800/50 overflow-hidden relative shadow-2xl">
+                         <video 
+                            autoPlay 
+                            playsInline 
+                            muted 
+                            className={`w-full h-full object-contain ${isPaused ? 'blur-md grayscale opacity-50' : ''}`}
+                            ref={(el) => {
+                                if (el && streamRef.current) el.srcObject = streamRef.current;
+                            }}
+                          />
+                          <div className="absolute top-2 right-2 bg-emerald-500/20 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-emerald-500 border border-emerald-500/30">
+                            LIVE
+                          </div>
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -656,8 +742,31 @@ export default function App() {
                     autoPlay 
                     playsInline 
                     muted={isMuted}
-                    className="w-full h-full object-contain bg-zinc-950"
+                    className={`w-full h-full object-contain bg-zinc-950 transition-all duration-1000 ${isPaused ? 'blur-3xl scale-110 grayscale opacity-30 origin-center' : ''}`}
                   />
+                  
+                  <AnimatePresence>
+                    {isPaused && (
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center p-8 bg-zinc-950/40 backdrop-blur-sm"
+                      >
+                        <motion.div 
+                          initial={{ scale: 0.8 }}
+                          animate={{ scale: 1 }}
+                          className="w-24 h-24 bg-amber-500/20 rounded-full flex items-center justify-center mb-8 border border-amber-500/30"
+                        >
+                          <Pause className="text-amber-500 w-12 h-12 animate-pulse" />
+                        </motion.div>
+                        <h3 className="text-3xl font-black text-white mb-4 tracking-tight">Transmisión en espera</h3>
+                        <p className="text-zinc-300 max-w-sm leading-relaxed text-lg">
+                          El emisor ha pausado la vista momentáneamente. No te desconectes, la señal regresará pronto.
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                   
                   {/* Controls Overlay */}
                   <div className={`absolute inset-0 flex flex-col justify-between p-4 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 hover:opacity-100' : 'opacity-100'}`}>
