@@ -19,7 +19,7 @@ export default function App() {
   const [status, setStatus] = useState("Listo para conectar");
   const [copied, setCopied] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true); // Start muted to ensure autoplay works on all browsers
   const [hasAudio, setHasAudio] = useState(false);
   const [myId, setMyId] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<{id: string, name: string}[]>([]);
@@ -236,8 +236,12 @@ export default function App() {
     };
 
     pc.ontrack = (event) => {
+      console.log("¡Pista de vídeo recibida! Mostrando en pantalla...");
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = event.streams[0];
+        // Force play just in case autoplay is blocked
+        remoteVideoRef.current.play().catch(e => console.warn("Autoplay block prevented immediate playback", e));
+        
         const audioTracks = event.streams[0].getAudioTracks();
         setHasAudio(audioTracks.length > 0);
       }
