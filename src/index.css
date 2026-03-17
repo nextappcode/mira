@@ -13,3 +13,17 @@
 .animate-pulse-subtle {
   animation: pulse-subtle 2s ease-in-out infinite;
 }
+
+/* TV Focus Indicator */
+:focus {
+  outline: 4px solid #10b981 !important; /* emerald-500 */
+  outline-offset: 4px;
+  box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.4) !important;
+  transform: scale(1.05);
+  transition: transform 0.2s ease-out;
+}
+
+/* Ensure smooth scrolling for remote navigation */
+html {
+  scroll-behavior: smooth;
+}

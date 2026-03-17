@@ -10,21 +10,10 @@ import fs from "fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-import { spawn, ChildProcess } from "child_process";
-
 async function startServer() {
   const app = express();
   const server = createServer(app);
   
-  // Carpeta para los archivos HLS (.m3u8 y .ts)
-  const LIVE_DIR = path.resolve(__dirname, "live");
-  if (!fs.existsSync(LIVE_DIR)) {
-    fs.mkdirSync(LIVE_DIR, { recursive: true });
-  }
-
-  // Rutas públicas para IPTV
-  app.use("/live", express.static(LIVE_DIR));
-
   // Basic health check
   app.get("/health", (req, res) => {
     res.send({ status: "ok", time: new Date().toISOString() });
@@ -36,41 +25,32 @@ async function startServer() {
 
   // Room management: RoomID -> Map<SocketID, WebSocket>
   const rooms = new Map<string, Map<string, WebSocket>>();
-  
-  // Procesos FFmpeg activos: RoomID -> ChildProcess
-  const ffmpegProcesses = new Map<string, ChildProcess>();
 
   server.on("upgrade", (request, socket, head) => {
     const url = request.url || "";
+    console.log(`[Server] Upgrade request received for: ${url} from ${request.headers.origin}`);
+    
     // Check if it's our signaling path
     if (url.includes("/ws-signal")) {
+      console.log(`[WS] Handling signaling upgrade for: ${url}`);
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit("connection", ws, request);
       });
+    } else {
+      console.log(`[Server] Ignoring upgrade request for: ${url}`);
+      // Don't close the socket here, let other handlers (like Vite) take it if they're active
     }
   });
 
   wss.on("connection", (ws) => {
     const socketId = uuidv4();
     let currentRoom: string | null = null;
-    let isBroadcaster = false;
 
     // Send the assigned ID to the client
     ws.send(JSON.stringify({ type: "your-id", id: socketId }));
 
     ws.on("message", (data) => {
       try {
-        // Los mensajes de video (media-chunk) son binarios
-        if (typeof data !== "string" && !(data instanceof String)) {
-          if (currentRoom && isBroadcaster && ffmpegProcesses.has(currentRoom)) {
-            const ffmpeg = ffmpegProcesses.get(currentRoom);
-            if (ffmpeg && ffmpeg.stdin && !ffmpeg.stdin.writableEnded) {
-              ffmpeg.stdin.write(data);
-            }
-          }
-          return;
-        }
-
         const message = JSON.parse(data.toString());
 
         switch (message.type) {
@@ -87,74 +67,6 @@ async function startServer() {
                 client.send(JSON.stringify({ type: "user-joined", userId: socketId }));
               }
             });
-            break;
-            
-          case "start-iptv":
-            if (currentRoom) {
-              isBroadcaster = true;
-              console.log(`[IPTV] Iniciando transmisión HLS para sala: ${currentRoom}`);
-              
-              // Limpiar archivos anteriores de esta sala si existen
-              const roomPath = path.join(LIVE_DIR, currentRoom);
-              if (!fs.existsSync(roomPath)) fs.mkdirSync(roomPath, { recursive: true });
-
-              try {
-                const ffmpeg = spawn("ffmpeg", [
-                  "-i", "pipe:0", // Video desde el navegador
-                  "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", 
-                  "-b:v", "1500k", "-maxrate", "1500k", "-bufsize", "3000k",
-                  "-g", "30", // Keyframes frecuentes para IPTV
-                  "-c:a", "aac", "-b:a", "128k",
-                  "-f", "hls",
-                  "-hls_time", "2", // Segments de 2 segundos
-                  "-hls_list_size", "5",
-                  "-hls_flags", "delete_segments",
-                  "-hls_segment_filename", path.join(roomPath, "segment_%03d.ts"),
-                  path.join(roomPath, "index.m3u8")
-                ]);
-
-                ffmpeg.on("error", (err: any) => {
-                  console.error(`[FFMPEG SPAWN ERROR] ${err.message}`);
-                  if (err.code === "ENOENT") {
-                    ws.send(JSON.stringify({ 
-                      type: "iptv-error", 
-                      message: "FFmpeg no está instalado en el servidor." 
-                    }));
-                  }
-                });
-
-                ffmpeg.stderr.on("data", (d) => {
-                  const msg = d.toString();
-                  // Logueamos los logs de ffmpeg para que los veas en Render
-                  console.log(`[FFMPEG LOG] ${msg.substring(0, 100)}...`);
-                  if (msg.includes("Error")) console.error(`[FFMPEG ERROR] ${msg}`);
-                });
-
-                ffmpeg.on("close", (code) => {
-                  console.log(`[IPTV] Proceso ffmpeg cerrado con código: ${code}`);
-                  ffmpegProcesses.delete(currentRoom!);
-                });
-
-                ffmpegProcesses.set(currentRoom, ffmpeg);
-                
-                console.log(`[IPTV] Enviando enlace listo para sala: ${currentRoom}`);
-                ws.send(JSON.stringify({ 
-                  type: "iptv-ready", 
-                  room: currentRoom,
-                  url: `/live/${currentRoom}/index.m3u8` 
-                }));
-              } catch (e: any) {
-                console.error("[CRITICAL IPTV ERROR]", e);
-                ws.send(JSON.stringify({ type: "iptv-error", message: e.message }));
-              }
-            }
-            break;
-
-          case "stop-iptv":
-            if (currentRoom && ffmpegProcesses.has(currentRoom)) {
-              ffmpegProcesses.get(currentRoom)?.stdin?.end();
-              ffmpegProcesses.delete(currentRoom);
-            }
             break;
 
           case "request-access":
@@ -208,10 +120,6 @@ async function startServer() {
           case "leave":
             if (currentRoom && rooms.has(currentRoom)) {
               rooms.get(currentRoom)?.delete(socketId);
-              if (isBroadcaster && ffmpegProcesses.has(currentRoom)) {
-                 ffmpegProcesses.get(currentRoom)?.stdin?.end();
-                 ffmpegProcesses.delete(currentRoom);
-              }
               rooms.get(currentRoom)?.forEach((client) => {
                 if (client.readyState === WebSocket.OPEN) {
                   client.send(JSON.stringify({ type: "leave", userId: socketId }));
@@ -228,10 +136,6 @@ async function startServer() {
     ws.on("close", () => {
       if (currentRoom && rooms.has(currentRoom)) {
         rooms.get(currentRoom)?.delete(socketId);
-        if (isBroadcaster && ffmpegProcesses.has(currentRoom)) {
-           ffmpegProcesses.get(currentRoom)?.stdin?.end();
-           ffmpegProcesses.delete(currentRoom);
-        }
         rooms.get(currentRoom)?.forEach((client) => {
           if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify({ type: "leave", userId: socketId }));
