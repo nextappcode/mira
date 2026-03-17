@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* BASIC RESET for Ancient Browsers (Fallback) */
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: #09090b; /* zinc-950 */
+  color: #f4f4f5; /* zinc-100 */
+}
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;

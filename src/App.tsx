@@ -439,46 +439,44 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30">
+    <div 
+      style={{ backgroundColor: "#09090b", color: "#f4f4f5", minHeight: "100vh" }}
+      className="bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30"
+    >
       {/* Header */}
-      <header className="p-6 border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 flex justify-between items-center">
+      <header className="p-6 border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 flex justify-between items-center" style={{ borderBottom: "1px solid #27272a" }}>
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setMode("home")}>
-          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <Share2 className="text-zinc-950 w-6 h-6" />
+          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20" style={{ background: "#10b981", borderRadius: "12px" }}>
+            <Share2 className="text-zinc-950 w-6 h-6" style={{ width: "24px", height: "24px", color: "#09090b" }} />
           </div>
           <h1 className="text-xl font-bold tracking-tight">mira</h1>
         </div>
-        <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 bg-zinc-900/50 px-3 py-1.5 rounded-full border border-zinc-800">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+        <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 bg-zinc-900/50 px-3 py-1.5 rounded-full border border-zinc-800" style={{ padding: "6px 12px", borderRadius: "99px", background: "#18181b", border: "1px solid #27272a" }}>
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} style={{ width: "8px", height: "8px", borderRadius: "50%", background: isConnected ? "#10b981" : "#ef4444" }} />
           {isConnected ? 'SISTEMA ONLINE' : 'CONECTANDO...'}
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto p-6 md:p-12">
-        <AnimatePresence mode="wait">
+      <main className="max-w-5xl mx-auto p-6 md:p-12" style={{ maxWidth: "1024px", margin: "0 auto", padding: "24px" }}>
           {mode === "home" && (
-            <motion.div
+            <div
               key="home"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
               className="grid md:grid-cols-2 gap-8 mt-12"
+              style={{ display: "flex", flexWrap: "wrap", gap: "24px", marginTop: "48px" }}
             >
               <button
                 onClick={() => { setMode("share"); generateRoomId(); }}
                 className="group relative bg-zinc-900 border border-zinc-800 p-8 rounded-3xl hover:border-emerald-500/50 transition-all duration-500 text-left overflow-hidden"
+                style={{ flex: "1", minWidth: "300px", background: "#18181b", border: "1px solid #27272a", borderRadius: "24px", padding: "32px", textAlign: "left", cursor: "pointer", color: "#fff" }}
               >
-                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                  <Monitor size={120} />
+                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6" style={{ width: "56px", height: "56px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "24px" }}>
+                  <Monitor className="text-emerald-500 w-8 h-8" style={{ width: "32px", height: "32px", color: "#10b981" }} />
                 </div>
-                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Monitor className="text-emerald-500 w-8 h-8" />
-                </div>
-                <h2 className="text-2xl font-bold mb-3">Compartir Pantalla</h2>
-                <p className="text-zinc-400 leading-relaxed">
-                  Envía tu pantalla a otro dispositivo. Genera un código y compártelo con el receptor.
+                <h2 className="text-2xl font-bold mb-3" style={{ fontSize: "24px", fontWeight: "bold", margin: "0 0 12px 0" }}>Compartir Pantalla</h2>
+                <p className="text-zinc-400 leading-relaxed" style={{ color: "#a1a1aa", margin: "0 0 32px 0" }}>
+                  Envía tu pantalla a otro dispositivo.
                 </p>
-                <div className="mt-8 flex items-center gap-2 text-emerald-500 font-semibold">
+                <div className="mt-8 flex items-center gap-2 text-emerald-500 font-semibold" style={{ display: "flex", alignItems: "center", gap: "8px", color: "#10b981", fontWeight: "600" }}>
                   Empezar ahora <Play size={16} />
                 </div>
               </button>
@@ -486,22 +484,20 @@ export default function App() {
               <button
                 onClick={() => setMode("watch")}
                 className="group relative bg-zinc-900 border border-zinc-800 p-8 rounded-3xl hover:border-emerald-500/50 transition-all duration-500 text-left overflow-hidden"
+                style={{ flex: "1", minWidth: "300px", background: "#18181b", border: "1px solid #27272a", borderRadius: "24px", padding: "32px", textAlign: "left", cursor: "pointer", color: "#fff" }}
               >
-                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                  <Tv size={120} />
+                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6" style={{ width: "56px", height: "56px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "24px" }}>
+                  <Tv className="text-emerald-500 w-8 h-8" style={{ width: "32px", height: "32px", color: "#10b981" }} />
                 </div>
-                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Tv className="text-emerald-500 w-8 h-8" />
-                </div>
-                <h2 className="text-2xl font-bold mb-3">Ver Transmisión</h2>
-                <p className="text-zinc-400 leading-relaxed">
-                  Recibe la pantalla de otro dispositivo. Ingresa el código de sala para conectar.
+                <h2 className="text-2xl font-bold mb-3" style={{ fontSize: "24px", fontWeight: "bold", margin: "0 0 12px 0" }}>Ver Transmisión</h2>
+                <p className="text-zinc-400 leading-relaxed" style={{ color: "#a1a1aa", margin: "0 0 32px 0" }}>
+                  Recibe la pantalla de otro dispositivo.
                 </p>
-                <div className="mt-8 flex items-center gap-2 text-emerald-500 font-semibold">
+                <div className="mt-8 flex items-center gap-2 text-emerald-500 font-semibold" style={{ display: "flex", alignItems: "center", gap: "8px", color: "#10b981", fontWeight: "600" }}>
                   Unirse a sala <Play size={16} />
                 </div>
               </button>
-            </motion.div>
+            </div>
           )}
 
           {mode === "share" && (
@@ -697,20 +693,18 @@ export default function App() {
           )}
 
           {mode === "watch" && (
-            <motion.div
+            <div
               key="watch"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
               className="space-y-8"
+              style={{ paddingBottom: "40px" }}
             >
-              <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+              <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl" style={{ background: "#18181b", border: "1px solid #27272a", borderRadius: "24px", padding: "24px" }}>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8" style={{ marginBottom: "24px" }}>
                   <div>
-                    <h2 className="text-2xl font-bold mb-1">Receptor de Pantalla</h2>
-                    <p className="text-zinc-500 text-sm">Ingresa el código para ver la transmisión.</p>
+                    <h2 className="text-2xl font-bold mb-1" style={{ fontSize: "24px", fontWeight: "bold", margin: "0 0 4px 0" }}>Receptor de Pantalla</h2>
+                    <p className="text-zinc-500 text-sm" style={{ color: "#71717a", fontSize: "14px", margin: "0" }}>Ingresa el código para ver la transmisión.</p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3" style={{ display: "flex", gap: "12px", alignItems: "center", marginTop: "16px" }}>
                     <input
                       type="text"
                       value={roomId}
@@ -718,29 +712,32 @@ export default function App() {
                       placeholder="CÓDIGO"
                       disabled={accessStatus === "requesting"}
                       className="bg-zinc-950 border border-zinc-800 px-6 py-3 rounded-2xl font-mono text-xl font-bold text-emerald-500 focus:outline-none focus:border-emerald-500 transition-colors w-40 text-center tracking-widest disabled:opacity-50"
+                      style={{ background: "#09090b", border: "1px solid #27272a", color: "#10b981", borderRadius: "16px", padding: "12px", width: "160px", textAlign: "center", fontSize: "20px" }}
                     />
                     {accessStatus === "idle" || accessStatus === "denied" ? (
                       <button
                         onClick={requestAccess}
                         className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold py-3.5 px-6 rounded-2xl transition-all flex items-center gap-2"
+                        style={{ background: "#10b981", color: "#09090b", borderRadius: "16px", padding: "14px 24px", fontWeight: "bold", border: "none", cursor: "pointer" }}
                       >
                         Unirse
                       </button>
                     ) : accessStatus === "requesting" ? (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-3 bg-zinc-800 px-6 py-3.5 rounded-2xl text-zinc-400 animate-pulse">
-                          <ShieldCheck size={20} /> Solicitando...
+                      <div className="flex flex-col gap-2" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                        <div className="flex items-center gap-3 bg-zinc-800 px-6 py-3.5 rounded-2xl text-zinc-400 animate-pulse" style={{ background: "#27272a", padding: "14px 24px", borderRadius: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
+                          <ShieldCheck size={20} style={{ width: "20px", height: "20px" }} /> Solicitando...
                         </div>
                         <button 
                           onClick={requestAccess}
                           className="text-[10px] text-emerald-500 hover:underline font-bold text-center"
+                          style={{ color: "#10b981", fontSize: "10px", fontWeight: "bold", background: "none", border: "none", textDecoration: "underline" }}
                         >
                           ¿No aparece el botón? Re-enviar solicitud
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-3 bg-emerald-500/20 text-emerald-500 px-6 py-3.5 rounded-2xl font-bold border border-emerald-500/30">
-                        <ShieldCheck size={20} /> Acceso Permitido
+                      <div className="flex items-center gap-3 bg-emerald-500/20 text-emerald-500 px-6 py-3.5 rounded-2xl font-bold border border-emerald-500/30" style={{ background: "rgba(16, 185, 129, 0.2)", color: "#10b981", padding: "14px 24px", borderRadius: "16px", border: "1px solid rgba(16, 185, 129, 0.3)", display: "flex", alignItems: "center", gap: "12px" }}>
+                        <ShieldCheck size={20} style={{ width: "20px", height: "20px" }} /> Acceso Permitido
                       </div>
                     )}
                   </div>
@@ -748,68 +745,69 @@ export default function App() {
 
                 <div 
                   ref={videoContainerRef}
-                  className={`relative group shadow-2xl overflow-hidden bg-black ${isFullscreen ? 'w-screen h-screen' : 'aspect-video rounded-2xl border border-zinc-800'}`}
+                  style={{ 
+                    position: "relative", 
+                    overflow: "hidden", 
+                    background: "#000", 
+                    borderRadius: isFullscreen ? "0" : "16px",
+                    border: isFullscreen ? "none" : "1px solid #27272a",
+                    aspectRatio: "16/9",
+                    width: "100%",
+                    height: isFullscreen ? "100vh" : "auto",
+                    display: "block"
+                  }}
                 >
                   <video 
                     ref={remoteVideoRef} 
                     autoPlay 
                     playsInline 
                     muted={isMuted}
-                    className={`w-full h-full object-contain bg-zinc-950 transition-all duration-1000 ${isPaused ? 'blur-3xl scale-110 grayscale opacity-30 origin-center' : ''}`}
+                    style={{ width: "100%", height: "100%", objectFit: "contain", background: "#09090b" }}
                   />
                   
-                  <AnimatePresence>
-                    {isPaused && (
-                      <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center p-8 bg-zinc-950/40 backdrop-blur-sm"
+                  {isPaused && (
+                    <div 
+                      style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(9, 9, 11, 0.7)" }}
+                    >
+                      <div 
+                        style={{ width: "96px", height: "96px", background: "rgba(245, 158, 11, 0.2)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "32px", border: "1px solid rgba(245, 158, 11, 0.3)" }}
                       >
-                        <motion.div 
-                          initial={{ scale: 0.8 }}
-                          animate={{ scale: 1 }}
-                          className="w-24 h-24 bg-amber-500/20 rounded-full flex items-center justify-center mb-8 border border-amber-500/30"
-                        >
-                          <Pause className="text-amber-500 w-12 h-12 animate-pulse" />
-                        </motion.div>
-                        <h3 className="text-3xl font-black text-white mb-4 tracking-tight">Transmisión en espera</h3>
-                        <p className="text-zinc-300 max-w-sm leading-relaxed text-lg">
-                          El emisor ha pausado la vista momentáneamente. No te desconectes, la señal regresará pronto.
-                        </p>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                        <Pause className="text-amber-500 w-12 h-12" style={{ width: "48px", height: "48px", color: "#f59e0b" }} />
+                      </div>
+                      <h3 style={{ fontSize: "28px", fontWeight: "bold", color: "#fff", margin: "0 0 16px 0" }}>Transmisión en pausa</h3>
+                      <p style={{ color: "#d4d4d8", maxWidth: "400px", fontSize: "16px", margin: "0" }}>El emisor ha pausado la vista.</p>
+                    </div>
+                  )}
                   
                   {/* Controls Overlay */}
-                  <div className={`absolute inset-0 flex flex-col justify-between p-4 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 hover:opacity-100' : 'opacity-100'}`}>
-                      <div className="flex justify-between items-start">
-                        <div className="flex flex-col gap-2">
-                          <div className="bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${status.includes("Conectado") ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`} />
+                  <div 
+                    style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "16px", pointerEvents: "none" }}
+                  >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", pointerEvents: "auto" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          <div style={{ background: "rgba(0,0,0,0.6)", padding: "6px 12px", borderRadius: "8px", fontSize: "12px", color: "#fff", display: "flex", alignItems: "center", gap: "8px" }}>
+                            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: status.includes("Conectado") ? "#10b981" : "#52525b" }} />
                             {status}
                           </div>
                           {hasAudio && (
-                            <div className="bg-emerald-500/20 backdrop-blur-md px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-500 flex items-center gap-1.5 border border-emerald-500/30">
-                              <Volume2 size={12} /> AUDIO DISPONIBLE
+                            <div style={{ background: "rgba(16, 185, 129, 0.2)", color: "#10b981", padding: "6px 10px", borderRadius: "6px", fontSize: "10px", fontWeight: "bold", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+                              AUDIO DISPONIBLE
                             </div>
                           )}
                         </div>
                         
-                        <div className="flex gap-2">
+                        <div style={{ display: "flex", gap: "8px" }}>
                           {hasAudio && (
                             <button
                               onClick={() => setIsMuted(!isMuted)}
-                              className="bg-black/60 backdrop-blur-md p-2 rounded-lg text-white hover:bg-emerald-500 transition-colors"
-                              title={isMuted ? "Activar sonido" : "Silenciar"}
+                              style={{ background: "rgba(0,0,0,0.6)", color: "#fff", padding: "8px", borderRadius: "8px", border: "none", cursor: "pointer" }}
                             >
                               {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
                             </button>
                           )}
                           <button
                             onClick={toggleFullscreen}
-                            className="bg-black/60 backdrop-blur-md p-2 rounded-lg text-white hover:bg-emerald-500 transition-colors"
-                            title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+                            style={{ background: "rgba(0,0,0,0.6)", color: "#fff", padding: "8px", borderRadius: "8px", border: "none", cursor: "pointer" }}
                           >
                             {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
                           </button>
@@ -817,21 +815,19 @@ export default function App() {
                       </div>
 
                     {!status.includes("Conectado") && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-600 pointer-events-none bg-zinc-950/80 backdrop-blur-sm">
-                        <Tv size={48} className="mb-4 opacity-20" />
-                        <p className="text-sm font-medium px-6 text-center">
+                      <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(9, 9, 11, 0.9)", pointerEvents: "auto", zIndex: 30 }}>
+                        <Tv size={48} style={{ opacity: 0.2, marginBottom: "16px", color: "#fff" }} />
+                        <p style={{ color: "#d4d4d8", textAlign: "center", padding: "0 24px", marginBottom: "20px" }}>
                           {status === "Transmisión finalizada por el emisor" || status === "Conexión perdida" 
                             ? status 
                             : "Esperando transmisión..."}
                         </p>
-                        {(status === "Transmisión finalizada por el emisor" || status === "Conexión perdida") && (
-                          <button 
-                            onClick={() => setMode("home")}
-                            className="mt-6 pointer-events-auto bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded-xl text-xs font-bold transition-all"
-                          >
-                            Volver al inicio
-                          </button>
-                        )}
+                        <button 
+                          onClick={() => setMode("home")}
+                          style={{ background: "#27272a", color: "#fff", padding: "10px 24px", borderRadius: "12px", border: "none", fontWeight: "bold", cursor: "pointer" }}
+                        >
+                          Volver al Inicio
+                        </button>
                       </div>
                     )}
                   </div>
@@ -857,9 +853,8 @@ export default function App() {
                   </button>
                 </div>
               </div>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
       </main>
 
       {/* Footer */}
