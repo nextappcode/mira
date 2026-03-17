@@ -136,6 +136,9 @@ export default function App() {
           } else if (message.type === "iptv-ready") {
             const fullUrl = `${window.location.protocol}//${window.location.host}${message.url}`;
             setIptvUrl(fullUrl);
+          } else if (message.type === "iptv-error") {
+            alert(`Error de IPTV: ${message.message}`);
+            stopIptv();
           }
         } catch (err) {
           // Silently handle JSON parse errors
@@ -642,19 +645,32 @@ export default function App() {
                           <Play size={16} /> Generar Enlace .m3u8
                         </button>
                       ) : (
-                        <button 
-                          onClick={stopIptv}
-                          className="bg-red-500/10 text-red-500 border border-red-500/20 px-6 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
-                        >
-                          <X size={16} /> Desactivar IPTV
-                        </button>
+                        <div className="flex flex-col md:flex-row items-center gap-3">
+                          {!iptvUrl && (
+                            <div className="flex items-center gap-2 text-emerald-500 text-xs font-bold animate-pulse bg-emerald-500/10 px-4 py-2 rounded-lg border border-emerald-500/20">
+                              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
+                              PROCESANDO VIDEO...
+                            </div>
+                          )}
+                          <button 
+                            onClick={stopIptv}
+                            className="bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white px-6 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
+                          >
+                            <X size={16} /> Detener IPTV
+                          </button>
+                        </div>
                       )}
                     </div>
 
                     {iptvUrl && (
-                      <div className="mt-4 flex flex-col gap-2">
-                         <div className="flex items-center gap-3 bg-zinc-900 p-3 rounded-2xl border border-emerald-500/30">
-                            <div className="flex-1 font-mono text-xs text-emerald-500 overflow-hidden text-ellipsis whitespace-nowrap">
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="mt-6 flex flex-col gap-3"
+                      >
+                         <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest ml-1">URL DE TRANSMISIÓN IPTV</span>
+                         <div className="flex items-center gap-3 bg-zinc-900 p-4 rounded-2xl border-2 border-emerald-500/30 shadow-lg shadow-emerald-500/5">
+                            <div className="flex-1 font-mono text-sm text-white overflow-hidden text-ellipsis select-all">
                               {iptvUrl}
                             </div>
                             <button 
@@ -671,7 +687,7 @@ export default function App() {
                          <p className="text-[10px] text-zinc-600 flex items-center gap-1">
                             <Info size={10} /> Copia este enlace en aplicaciones como VLC, Kodi o Smart TV.
                          </p>
-                      </div>
+                      </motion.div>
                     )}
                   </motion.div>
                 )}

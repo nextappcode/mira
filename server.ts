@@ -98,38 +98,55 @@ async function startServer() {
               const roomPath = path.join(LIVE_DIR, currentRoom);
               if (!fs.existsSync(roomPath)) fs.mkdirSync(roomPath, { recursive: true });
 
-              const ffmpeg = spawn("ffmpeg", [
-                "-i", "pipe:0", // Video desde el navegador
-                "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", 
-                "-b:v", "1500k", "-maxrate", "1500k", "-bufsize", "3000k",
-                "-g", "30", // Keyframes frecuentes para IPTV
-                "-c:a", "aac", "-b:a", "128k",
-                "-f", "hls",
-                "-hls_time", "2", // Segments de 2 segundos
-                "-hls_list_size", "5",
-                "-hls_flags", "delete_segments",
-                "-hls_segment_filename", path.join(roomPath, "segment_%03d.ts"),
-                path.join(roomPath, "index.m3u8")
-              ]);
+              try {
+                const ffmpeg = spawn("ffmpeg", [
+                  "-i", "pipe:0", // Video desde el navegador
+                  "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", 
+                  "-b:v", "1500k", "-maxrate", "1500k", "-bufsize", "3000k",
+                  "-g", "30", // Keyframes frecuentes para IPTV
+                  "-c:a", "aac", "-b:a", "128k",
+                  "-f", "hls",
+                  "-hls_time", "2", // Segments de 2 segundos
+                  "-hls_list_size", "5",
+                  "-hls_flags", "delete_segments",
+                  "-hls_segment_filename", path.join(roomPath, "segment_%03d.ts"),
+                  path.join(roomPath, "index.m3u8")
+                ]);
 
-              ffmpeg.stderr.on("data", (d) => {
-                // Loguear solo errores críticos de ffmpeg
-                const msg = d.toString();
-                if (msg.includes("Error")) console.error(`[FFMPEG ERROR] ${msg}`);
-              });
+                let hasStarted = false;
+                ffmpeg.on("error", (err: any) => {
+                  console.error(`[FFMPEG SPAWN ERROR] ${err.message}`);
+                  if (err.code === "ENOENT") {
+                    ws.send(JSON.stringify({ 
+                      type: "iptv-error", 
+                      message: "FFmpeg no está instalado en esta computadora (Windows). Instálalo para probarlo localmente (o súbelo a Render para usarlo directamente)." 
+                    }));
+                  }
+                });
 
-              ffmpeg.on("close", () => {
-                console.log(`[IPTV] Streaming finalizado para sala: ${currentRoom}`);
-                ffmpegProcesses.delete(currentRoom!);
-              });
+                ffmpeg.stderr.on("data", (d) => {
+                  const msg = d.toString();
+                  if (!hasStarted && (msg.includes("ffmpeg version") || msg.includes("Input"))) {
+                    hasStarted = true;
+                    // Notificar al cliente que el link está listo
+                    ws.send(JSON.stringify({ 
+                      type: "iptv-ready", 
+                      url: `/live/${currentRoom}/index.m3u8` 
+                    }));
+                  }
+                  if (msg.includes("Error")) console.error(`[FFMPEG ERROR] ${msg}`);
+                });
 
-              ffmpegProcesses.set(currentRoom, ffmpeg);
-              
-              // Notificar al cliente que el link está listo
-              ws.send(JSON.stringify({ 
-                type: "iptv-ready", 
-                url: `/live/${currentRoom}/index.m3u8` 
-              }));
+                ffmpeg.on("close", () => {
+                  console.log(`[IPTV] Streaming finalizado para sala: ${currentRoom}`);
+                  ffmpegProcesses.delete(currentRoom!);
+                });
+
+                ffmpegProcesses.set(currentRoom, ffmpeg);
+              } catch (e: any) {
+                console.error("[CRITICAL IPTV ERROR]", e);
+                ws.send(JSON.stringify({ type: "iptv-error", message: e.message }));
+              }
             }
             break;
 
