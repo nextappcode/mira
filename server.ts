@@ -55,24 +55,32 @@ async function startServer() {
 
         switch (message.type) {
           case "join":
+            console.log(`[WS] User ${socketId} joining room: ${message.room}`);
             currentRoom = message.room;
             if (!rooms.has(currentRoom!)) {
               rooms.set(currentRoom!, new Map());
+              console.log(`[WS] Created new room: ${currentRoom}`);
             }
             rooms.get(currentRoom!)?.set(socketId, ws);
+            console.log(`[WS] Room ${currentRoom} now has ${rooms.get(currentRoom!)?.size} participants`);
             
             // Notify others in the room
             rooms.get(currentRoom!)?.forEach((client, id) => {
               if (id !== socketId && client.readyState === WebSocket.OPEN) {
+                console.log(`[WS] Notifying ${id} that ${socketId} joined`);
                 client.send(JSON.stringify({ type: "user-joined", userId: socketId }));
               }
             });
             break;
 
           case "request-access":
+            console.log(`[WS] User ${socketId} requesting access in room: ${currentRoom}`);
             if (currentRoom && rooms.has(currentRoom)) {
-              rooms.get(currentRoom)?.forEach((client, id) => {
+              const participants = rooms.get(currentRoom);
+              console.log(`[WS] Broadcasting request to ${participants!.size - 1} other participants`);
+              participants?.forEach((client, id) => {
                 if (id !== socketId && client.readyState === WebSocket.OPEN) {
+                  console.log(`[WS] Sending request-access to ${id}`);
                   client.send(JSON.stringify({ 
                     type: "request-access", 
                     userId: socketId,
@@ -80,6 +88,8 @@ async function startServer() {
                   }));
                 }
               });
+            } else {
+              console.log(`[WS] request-access FAILED: Room ${currentRoom} not found or empty`);
             }
             break;
 

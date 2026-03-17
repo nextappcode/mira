@@ -72,19 +72,27 @@ export default function App() {
     let initialDelayTimeout: number;
 
     const connect = () => {
+      // Use absolute URL detection to avoid issues on some older TV browsers
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const socket = new WebSocket(`${protocol}//${window.location.host}/ws-signal`);
+      const wsUrl = `${protocol}//${window.location.host}/ws-signal`;
+      console.log(`[mira] Intentando conectar a: ${wsUrl}`);
+      
+      const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 
       socket.onopen = () => {
-        console.log("WebSocket connected successfully");
+        console.log("[mira] WebSocket conectado exitosamente");
         setStatus("Conectado al servidor");
         setIsConnected(true);
+        reconnectAttempts.current = 0; // Reset attempts on success
       };
 
       socket.onmessage = async (event) => {
+        // Keep-alive/Heartbeat log (optional, only for debug)
+        // console.debug("[mira] Mensaje recibido del servidor");
         try {
           const message = JSON.parse(event.data);
+          console.log(`[mira] Mensaje tipo: ${message.type}`);
           
           if (message.type === "your-id") {
             setMyId(message.id);
@@ -272,6 +280,12 @@ export default function App() {
     }
 
     try {
+      // First join the room to be ready for incoming requests
+      const joinSent = safeSend({ type: "join", room: roomId });
+      if (!joinSent) {
+        throw new Error("No se pudo enviar mensaje de unión. Revisa la conexión.");
+      }
+
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { 
           cursor: "always",
@@ -287,7 +301,6 @@ export default function App() {
         localVideoRef.current.srcObject = stream;
       }
 
-      safeSend({ type: "join", room: roomId });
       setIsSharing(true);
       setStatus("Sala abierta. Esperando solicitudes...");
 
