@@ -27,6 +27,8 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [participants, setParticipants] = useState<{id: string, name: string}[]>([]);
+  const [isIptvEnabled, setIsIptvEnabled] = useState(false);
+  const [iptvUrl, setIptvUrl] = useState<string | null>(null);
   
   const isSharingRef = useRef(false);
   
@@ -36,6 +38,7 @@ export default function App() {
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const socketRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   useEffect(() => {
     // Aggressively suppress expected Vite HMR errors in this environment
@@ -130,6 +133,9 @@ export default function App() {
             }
           } else if (message.type === "pause-state") {
             setIsPaused(message.paused);
+          } else if (message.type === "iptv-ready") {
+            const fullUrl = `${window.location.protocol}//${window.location.host}${message.url}`;
+            setIptvUrl(fullUrl);
           }
         } catch (err) {
           // Silently handle JSON parse errors
@@ -350,16 +356,54 @@ export default function App() {
     safeSend({ type: "access-response", targetId: userId, granted: false });
   };
 
+  const startIptv = () => {
+    if (!streamRef.current || !socketRef.current) return;
+    
+    setIsIptvEnabled(true);
+    safeSend({ type: "start-iptv" });
+
+    try {
+      const recorder = new MediaRecorder(streamRef.current, {
+        mimeType: "video/webm;codecs=vp8,opus"
+      });
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0 && socketRef.current?.readyState === WebSocket.OPEN) {
+          socketRef.current.send(event.data);
+        }
+      };
+
+      recorder.start(1000); 
+      mediaRecorderRef.current = recorder;
+    } catch (e) {
+      console.error("Error al iniciar grabador IPTV:", e);
+      setIsIptvEnabled(false);
+    }
+  };
+
+  const stopIptv = () => {
+    setIsIptvEnabled(false);
+    setIptvUrl(null);
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+    safeSend({ type: "stop-iptv" });
+  };
+
   const stopSharing = () => {
     safeSend({ type: "leave", room: roomId });
-    streamRef.current?.getTracks().forEach(track => track.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
     peerConnections.current.forEach(pc => pc.close());
-     peerConnections.current.clear();
-     setIsSharing(false);
-     setIsPaused(false);
-     setParticipants([]);
-     setStatus("Compartición finalizada");
+    peerConnections.current.clear();
+    setIsSharing(false);
+    setIsPaused(false);
+    setParticipants([]);
+    setStatus("Compartición finalizada");
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    stopIptv();
   };
 
   const togglePause = () => {
@@ -377,12 +421,8 @@ export default function App() {
     setAccessStatus("requesting");
     setStatus("Solicitando acceso al emisor...");
     
-    // Requesting fullscreen ahead of time to "prime" the user gesture
-    // Many browsers allow this if it's within the same click event
     if (videoContainerRef.current && !document.fullscreenElement) {
-        videoContainerRef.current.requestFullscreen().catch(() => {
-          // Silent fail - we'll try again when the track arrives
-        });
+        videoContainerRef.current.requestFullscreen().catch(() => {});
     }
     
     if (safeSend({ type: "join", room: roomId })) {
@@ -406,7 +446,6 @@ export default function App() {
 
   const toggleFullscreen = () => {
     if (!videoContainerRef.current) return;
-
     if (!document.fullscreenElement) {
       videoContainerRef.current.requestFullscreen().catch(err => {
         console.error(`Error attempting to enable full-screen mode: ${err.message}`);
@@ -420,7 +459,6 @@ export default function App() {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
-
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
@@ -581,6 +619,62 @@ export default function App() {
                     Volver
                   </button>
                 </div>
+
+                {/* IPTV Section */}
+                {isSharing && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-8 p-6 bg-zinc-950 border border-zinc-800 rounded-3xl"
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h3 className="text-lg font-bold flex items-center gap-2">
+                          <Tv className="text-emerald-500" size={20} /> Enlace para IPTV / VLC
+                        </h3>
+                        <p className="text-zinc-500 text-sm">Genera un archivo .m3u8 para ver en reproductores externos.</p>
+                      </div>
+                      {!isIptvEnabled ? (
+                        <button 
+                          onClick={startIptv}
+                          className="bg-zinc-800 hover:bg-emerald-500 text-white hover:text-zinc-950 px-6 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
+                        >
+                          <Play size={16} /> Generar Enlace .m3u8
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={stopIptv}
+                          className="bg-red-500/10 text-red-500 border border-red-500/20 px-6 py-3 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
+                        >
+                          <X size={16} /> Desactivar IPTV
+                        </button>
+                      )}
+                    </div>
+
+                    {iptvUrl && (
+                      <div className="mt-4 flex flex-col gap-2">
+                         <div className="flex items-center gap-3 bg-zinc-900 p-3 rounded-2xl border border-emerald-500/30">
+                            <div className="flex-1 font-mono text-xs text-emerald-500 overflow-hidden text-ellipsis whitespace-nowrap">
+                              {iptvUrl}
+                            </div>
+                            <button 
+                              onClick={() => {
+                                navigator.clipboard.writeText(iptvUrl);
+                                setCopied(true);
+                                setTimeout(() => setCopied(false), 2000);
+                              }}
+                              className="p-2 hover:bg-zinc-800 rounded-lg transition-colors text-zinc-400"
+                            >
+                              {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                            </button>
+                         </div>
+                         <p className="text-[10px] text-zinc-600 flex items-center gap-1">
+                            <Info size={10} /> Copia este enlace en aplicaciones como VLC, Kodi o Smart TV.
+                         </p>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
 
                 {/* Pending Requests for Broadcaster */}
                 {isSharing && pendingRequests.length > 0 && (
