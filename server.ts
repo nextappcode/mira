@@ -137,9 +137,10 @@ async function startServer() {
 
                 ffmpegProcesses.set(currentRoom, ffmpeg);
                 
-                // Enviamos el link de inmediato para que el cliente no espere
+                console.log(`[IPTV] Enviando enlace listo para sala: ${currentRoom}`);
                 ws.send(JSON.stringify({ 
                   type: "iptv-ready", 
+                  room: currentRoom,
                   url: `/live/${currentRoom}/index.m3u8` 
                 }));
               } catch (e: any) {

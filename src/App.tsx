@@ -134,7 +134,9 @@ export default function App() {
           } else if (message.type === "pause-state") {
             setIsPaused(message.paused);
           } else if (message.type === "iptv-ready") {
-            const fullUrl = `${window.location.protocol}//${window.location.host}${message.url}`;
+            const path = message.url || `/live/${message.room || roomId}/index.m3u8`;
+            const fullUrl = `${window.location.protocol}//${window.location.host}${path}`;
+            console.log("IPTV URL recibida:", fullUrl);
             setIptvUrl(fullUrl);
           } else if (message.type === "iptv-error") {
             alert(`Error de IPTV: ${message.message}`);
