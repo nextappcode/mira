@@ -113,36 +113,35 @@ async function startServer() {
                   path.join(roomPath, "index.m3u8")
                 ]);
 
-                let hasStarted = false;
                 ffmpeg.on("error", (err: any) => {
                   console.error(`[FFMPEG SPAWN ERROR] ${err.message}`);
                   if (err.code === "ENOENT") {
                     ws.send(JSON.stringify({ 
                       type: "iptv-error", 
-                      message: "FFmpeg no está instalado en esta computadora (Windows). Instálalo para probarlo localmente (o súbelo a Render para usarlo directamente)." 
+                      message: "FFmpeg no está instalado en el servidor." 
                     }));
                   }
                 });
 
                 ffmpeg.stderr.on("data", (d) => {
                   const msg = d.toString();
-                  if (!hasStarted && (msg.includes("ffmpeg version") || msg.includes("Input"))) {
-                    hasStarted = true;
-                    // Notificar al cliente que el link está listo
-                    ws.send(JSON.stringify({ 
-                      type: "iptv-ready", 
-                      url: `/live/${currentRoom}/index.m3u8` 
-                    }));
-                  }
+                  // Logueamos los logs de ffmpeg para que los veas en Render
+                  console.log(`[FFMPEG LOG] ${msg.substring(0, 100)}...`);
                   if (msg.includes("Error")) console.error(`[FFMPEG ERROR] ${msg}`);
                 });
 
-                ffmpeg.on("close", () => {
-                  console.log(`[IPTV] Streaming finalizado para sala: ${currentRoom}`);
+                ffmpeg.on("close", (code) => {
+                  console.log(`[IPTV] Proceso ffmpeg cerrado con código: ${code}`);
                   ffmpegProcesses.delete(currentRoom!);
                 });
 
                 ffmpegProcesses.set(currentRoom, ffmpeg);
+                
+                // Enviamos el link de inmediato para que el cliente no espere
+                ws.send(JSON.stringify({ 
+                  type: "iptv-ready", 
+                  url: `/live/${currentRoom}/index.m3u8` 
+                }));
               } catch (e: any) {
                 console.error("[CRITICAL IPTV ERROR]", e);
                 ws.send(JSON.stringify({ type: "iptv-error", message: e.message }));
