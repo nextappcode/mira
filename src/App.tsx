@@ -485,11 +485,10 @@ export default function App() {
     setAccessStatus("requesting");
     setStatus("Solicitando acceso al emisor...");
     
-    // Requesting fullscreen ahead of time to "prime" the user gesture
-    // Many browsers allow this if it's within the same click event
-    if (videoContainerRef.current && !document.fullscreenElement) {
-        videoContainerRef.current.requestFullscreen().catch(() => {
-          // Silent fail - we'll try again when the track arrives
+    // Requesting fullscreen on the body/document as it's the most reliable for TVs
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {
+          console.log("Primer intento de Fullscreen fallido (esperando aprobación)");
         });
     }
     
@@ -513,11 +512,9 @@ export default function App() {
   };
 
   const toggleFullscreen = () => {
-    if (!videoContainerRef.current) return;
-
     if (!document.fullscreenElement) {
-      videoContainerRef.current.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error: ${err.message}`);
       });
     } else {
       document.exitFullscreen();
@@ -532,6 +529,13 @@ export default function App() {
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    if (accessStatus === "granted" && !document.fullscreenElement) {
+        // Redundant attempt when access is granted
+        document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }, [accessStatus]);
 
   const reSync = () => {
     if (remoteVideoRef.current) {
@@ -551,407 +555,271 @@ export default function App() {
       style={{ backgroundColor: "#09090b", color: "#f4f4f5", minHeight: "100vh" }}
       className="bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30"
     >
-      {/* Header */}
-      <header className="p-6 border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 flex justify-between items-center" style={{ borderBottom: "1px solid #27272a" }}>
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setMode("home")}>
-          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20" style={{ background: "#10b981", borderRadius: "12px" }}>
-            <Share2 className="text-zinc-950 w-6 h-6" style={{ width: "24px", height: "24px", color: "#09090b" }} />
+      {/* Header - Simplified for low resources */}
+      <header className="p-4 border-b-2 border-emerald-500/20 bg-zinc-950 sticky top-0 z-50 flex justify-between items-center">
+        <div className="flex items-center gap-4 cursor-pointer" onClick={() => setMode("home")}>
+          <div className="w-12 h-12 bg-emerald-500 rounded-lg flex items-center justify-center border-2 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+            <Share2 className="text-zinc-950 w-7 h-7" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight">mira</h1>
+          <div>
+            <h1 className="text-2xl font-black tracking-tighter uppercase italic leading-none">MIRA</h1>
+            <span className="text-[10px] font-bold text-emerald-500/60 tracking-widest uppercase">Stream Engine</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 bg-zinc-900/50 px-3 py-1.5 rounded-full border border-zinc-800" style={{ padding: "6px 12px", borderRadius: "99px", background: "#18181b", border: "1px solid #27272a" }}>
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} style={{ width: "8px", height: "8px", borderRadius: "50%", background: isConnected ? "#10b981" : "#ef4444" }} />
-          {isConnected ? 'SISTEMA ONLINE' : 'CONECTANDO...'}
+        <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg">
+          <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`} />
+          <span className="text-[10px] font-black tracking-widest uppercase text-zinc-400">
+            {isConnected ? 'SISTEMA OK' : 'OFFLINE'}
+          </span>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto p-6 md:p-12" style={{ maxWidth: "1024px", margin: "0 auto", padding: "24px" }}>
+      <main className="max-w-6xl mx-auto p-4 md:p-8">
           {mode === "home" && (
-            <div
-              key="home"
-              className="grid md:grid-cols-2 gap-8 mt-12"
-              style={{ display: "flex", flexWrap: "wrap", gap: "24px", marginTop: "48px" }}
-            >
+            <div className="flex flex-col md:flex-row gap-6 mt-6 md:mt-12 h-[calc(100vh-180px)] md:h-auto">
               <button
                 onClick={() => { setMode("share"); generateRoomId(); }}
-                className="group relative bg-zinc-900 border border-zinc-800 p-8 rounded-3xl hover:border-emerald-500/50 transition-all duration-500 text-left overflow-hidden"
-                style={{ flex: "1", minWidth: "300px", background: "#18181b", border: "1px solid #27272a", borderRadius: "24px", padding: "32px", textAlign: "left", cursor: "pointer", color: "#fff" }}
+                className="flex-1 group bg-zinc-900 border-4 border-zinc-800 p-10 rounded-[40px] hover:border-emerald-500 transition-all text-center flex flex-col items-center justify-center gap-6 active:scale-95 active:bg-zinc-800"
               >
-                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6" style={{ width: "56px", height: "56px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "24px" }}>
-                  <Monitor className="text-emerald-500 w-8 h-8" style={{ width: "32px", height: "32px", color: "#10b981" }} />
+                <div className="w-24 h-24 bg-emerald-500 rounded-[32px] flex items-center justify-center shadow-2xl group-hover:rotate-6 transition-transform">
+                  <Monitor className="text-zinc-950 w-12 h-12" />
                 </div>
-                <h2 className="text-2xl font-bold mb-3" style={{ fontSize: "24px", fontWeight: "bold", margin: "0 0 12px 0" }}>Compartir Pantalla</h2>
-                <p className="text-zinc-400 leading-relaxed" style={{ color: "#a1a1aa", margin: "0 0 32px 0" }}>
-                  Envía tu pantalla a otro dispositivo.
-                </p>
-                <div className="mt-8 flex items-center gap-2 text-emerald-500 font-semibold" style={{ display: "flex", alignItems: "center", gap: "8px", color: "#10b981", fontWeight: "600" }}>
-                  Empezar ahora <Play size={16} />
+                <div>
+                  <h2 className="text-4xl font-black mb-2 uppercase tracking-tighter">EMITIR</h2>
+                  <p className="text-zinc-500 font-bold text-sm uppercase tracking-widest">Compartir mi pantalla</p>
+                </div>
+                <div className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-6 py-2 rounded-full font-black text-xs uppercase tracking-widest">
+                  Iniciar Sala
                 </div>
               </button>
 
               <button
                 onClick={() => setMode("watch")}
-                className="group relative bg-zinc-900 border border-zinc-800 p-8 rounded-3xl hover:border-emerald-500/50 transition-all duration-500 text-left overflow-hidden"
-                style={{ flex: "1", minWidth: "300px", background: "#18181b", border: "1px solid #27272a", borderRadius: "24px", padding: "32px", textAlign: "left", cursor: "pointer", color: "#fff" }}
+                className="flex-1 group bg-zinc-900 border-4 border-zinc-800 p-10 rounded-[40px] hover:border-emerald-500 transition-all text-center flex flex-col items-center justify-center gap-6 active:scale-95 active:bg-zinc-800"
               >
-                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6" style={{ width: "56px", height: "56px", background: "rgba(16, 185, 129, 0.1)", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "24px" }}>
-                  <Tv className="text-emerald-500 w-8 h-8" style={{ width: "32px", height: "32px", color: "#10b981" }} />
+                <div className="w-24 h-24 bg-zinc-100 rounded-[32px] flex items-center justify-center shadow-2xl group-hover:-rotate-6 transition-transform">
+                  <Tv className="text-zinc-950 w-12 h-12" />
                 </div>
-                <h2 className="text-2xl font-bold mb-3" style={{ fontSize: "24px", fontWeight: "bold", margin: "0 0 12px 0" }}>Ver Transmisión</h2>
-                <p className="text-zinc-400 leading-relaxed" style={{ color: "#a1a1aa", margin: "0 0 32px 0" }}>
-                  Recibe la pantalla de otro dispositivo.
-                </p>
-                <div className="mt-8 flex items-center gap-2 text-emerald-500 font-semibold" style={{ display: "flex", alignItems: "center", gap: "8px", color: "#10b981", fontWeight: "600" }}>
-                  Unirse a sala <Play size={16} />
+                <div>
+                  <h2 className="text-4xl font-black mb-2 uppercase tracking-tighter">RECIBIR</h2>
+                  <p className="text-zinc-500 font-bold text-sm uppercase tracking-widest">Ver una transmisión</p>
+                </div>
+                <div className="bg-white/10 text-white border border-white/20 px-6 py-2 rounded-full font-black text-xs uppercase tracking-widest">
+                  Entrar con Código
                 </div>
               </button>
             </div>
           )}
-
           {mode === "share" && (
-            <motion.div
-              key="share"
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.98 }}
-              className="space-y-6"
-              style={{ maxWidth: "1200px", margin: "0 auto" }}
-            >
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-zinc-900 border border-zinc-800 p-8 rounded-[32px]">
-                <div>
-                  <h2 className="text-3xl font-bold mb-1 tracking-tight">Panel de Emisión</h2>
-                  <p className="text-zinc-500 text-sm">Gestiona tu transmisión y audiencia en tiempo real.</p>
-                </div>
-                <div className="flex items-center gap-3 bg-zinc-950 p-2 rounded-2xl border border-zinc-800 shadow-inner">
-                  <div className="px-5 py-2.5 font-mono text-2xl font-bold text-emerald-500 tracking-[0.2em]">
-                    {roomId || "------"}
+            <div key="share" className="space-y-6 animate-in fade-in duration-500">
+               {/* Header del Panel */}
+               <div className="bg-zinc-900 border-4 border-zinc-800 p-6 md:p-8 rounded-[32px] flex flex-col md:flex-row justify-between items-center gap-6">
+                  <div className="text-center md:text-left">
+                     <h2 className="text-3xl font-black uppercase tracking-tighter">Panel de Emisor</h2>
+                     <p className="text-emerald-500/60 font-bold text-xs uppercase tracking-widest">Transmitiendo en vivo</p>
                   </div>
-                  <button 
-                    onClick={copyRoomId}
-                    className="p-3.5 hover:bg-zinc-800 rounded-xl transition-all text-zinc-400 hover:text-white active:scale-90"
-                    title="Copiar código"
-                  >
-                    {copied ? <Check size={22} className="text-emerald-500" /> : <Copy size={22} />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid lg:grid-cols-[1fr,340px] gap-8 items-start">
-                {/* LADO IZQUIERDO: MONITOR PRINCIPAL */}
-                <div className="space-y-6">
-                  <div className="bg-zinc-900 border border-zinc-800 p-5 rounded-[40px] shadow-2xl overflow-hidden relative group">
-                    <div className="aspect-video bg-zinc-950 rounded-[28px] border border-zinc-800/50 overflow-hidden relative shadow-inner">
-                      <video 
-                        ref={localVideoRef} 
-                        autoPlay 
-                        playsInline 
-                        muted 
-                        className={`w-full h-full object-contain transition-all duration-1000 ${isPaused ? 'blur-2xl opacity-40 scale-105 grayscale' : ''}`}
-                      />
-                      {isPaused && (
-                        <div className="absolute inset-0 flex items-center justify-center z-20">
-                          <motion.div 
-                            initial={{ scale: 0.8 }} animate={{ scale: 1 }}
-                            className="bg-amber-500/10 backdrop-blur-xl px-10 py-5 rounded-3xl border border-amber-500/30 flex flex-col items-center gap-4 shadow-2xl shadow-amber-500/10"
-                          >
-                            <div className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center">
-                               <EyeOff className="text-amber-500 w-8 h-8" />
-                            </div>
-                            <span className="text-amber-500 font-black uppercase tracking-[0.3em] text-xs">Vista en Pausa</span>
-                          </motion.div>
-                        </div>
-                      )}
-                      {!isSharing && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-800 z-10">
-                          <Monitor size={80} className="mb-6 opacity-10" />
-                          <p className="text-xs font-bold uppercase tracking-widest opacity-30">Previsualización de sistema</p>
-                        </div>
-                      )}
-                      
-                      {/* Live Badge */}
-                      {isSharing && !isPaused && (
-                        <div className="absolute top-6 left-6 z-20">
-                          <div className="bg-red-500/20 backdrop-blur-md px-3 py-1.5 rounded-full border border-red-500/30 flex items-center gap-2">
-                             <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
-                             <span className="text-red-500 text-[10px] font-black uppercase tracking-wider">Emitiendo</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-8 flex flex-wrap gap-4 px-2">
-                      {!isSharing ? (
-                        <button
-                          onClick={startSharing}
-                          className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black py-5 px-10 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-500/20 active:scale-[0.98]"
-                        >
-                          <Share2 size={24} /> EMPEZAR A COMPARTIR
+                  <div className="flex flex-col items-center gap-2">
+                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em]">Código de Sala</span>
+                     <div className="bg-zinc-950 border-2 border-emerald-500/30 px-8 py-3 rounded-2xl flex items-center gap-4 shadow-inner">
+                        <span className="font-mono text-3xl font-black text-emerald-500 tracking-[0.2em]">{roomId || "------"}</span>
+                        <button onClick={copyRoomId} className="p-2 hover:bg-emerald-500/10 rounded-lg transition-all text-emerald-500 active:scale-90" title="Copiar código">
+                           {copied ? <Check size={24} /> : <Copy size={24} />}
                         </button>
-                      ) : (
-                        <>
-                          <button
-                            onClick={togglePause}
-                            className={`flex-1 ${isPaused ? 'bg-amber-500 text-amber-950' : 'bg-zinc-800 text-white hover:bg-zinc-700'} font-black py-5 px-6 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg active:scale-[0.98]`}
-                          >
-                            {isPaused ? <Play size={20} /> : <Pause size={20} />}
-                            {isPaused ? "REANUDAR VISTA" : "PAUSAR VISTA"}
-                          </button>
-                          <button
-                            onClick={stopSharing}
-                            className="flex-1 bg-red-500 hover:bg-red-400 text-white font-black py-5 px-6 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-red-500/20 active:scale-[0.98]"
-                          >
-                            <StopCircle size={20} /> DETENER
-                          </button>
-                        </>
-                      )}
-                      <button
-                        onClick={() => { stopSharing(); setMode("home"); }}
-                        className="bg-zinc-800 hover:bg-zinc-700 text-white font-black py-5 px-8 rounded-2xl transition-all active:scale-[0.98]"
-                      >
-                        VOLVER
-                      </button>
-                    </div>
+                     </div>
+                  </div>
+               </div>
+
+               <div className="grid lg:grid-cols-[1fr,320px] gap-6">
+                  {/* MONITOR IZQUIERDO: MONITOR DE EMISIÓN */}
+                  <div className="space-y-4">
+                     <div className="bg-black border-4 border-zinc-800 rounded-[40px] overflow-hidden relative aspect-video shadow-2xl">
+                        <video ref={localVideoRef} autoPlay playsInline muted className={`w-full h-full object-contain ${isPaused ? 'opacity-20 grayscale' : ''}`} />
+                        
+                        {isPaused && (
+                           <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/60">
+                              <div className="bg-amber-500 text-amber-950 px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] flex items-center gap-3 animate-pulse">
+                                 <Pause size={24} /> Vista en Pausa
+                              </div>
+                           </div>
+                        )}
+                        
+                        {!isSharing && (
+                           <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-800">
+                              <Monitor size={80} className="mb-4 opacity-10" />
+                              <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">Monitor de Sistema</p>
+                           </div>
+                        )}
+
+                        {isSharing && !isPaused && (
+                           <div className="absolute top-6 left-6 flex items-center gap-2 bg-red-600 px-3 py-1 rounded-lg">
+                              <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                              <span className="text-white text-[10px] font-black uppercase">En Vivo</span>
+                           </div>
+                        )}
+                     </div>
+
+                     {/* BOTONES DE ACCIÓN GIGANTES */}
+                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {!isSharing ? (
+                           <button onClick={startSharing} className="col-span-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black py-6 rounded-[24px] text-xl uppercase tracking-tighter flex items-center justify-center gap-3 shadow-xl shadow-emerald-500/10 active:scale-95">
+                              <Share2 size={24} /> Empezar a Compartir
+                           </button>
+                        ) : (
+                           <>
+                              <button onClick={togglePause} className={`py-6 rounded-[24px] font-black text-lg uppercase tracking-tighter flex items-center justify-center gap-3 transition-all active:scale-95 ${isPaused ? 'bg-amber-500 text-amber-950 shadow-lg' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}>
+                                 {isPaused ? <Play size={24} /> : <Pause size={24} />}
+                                 {isPaused ? "Reanudar" : "Pausar"}
+                              </button>
+                              <button onClick={stopSharing} className="bg-red-500 hover:bg-red-400 text-white font-black py-6 rounded-[24px] text-lg uppercase tracking-tighter flex items-center justify-center gap-3 shadow-xl shadow-red-500/10 active:scale-95">
+                                 <StopCircle size={24} /> Detener
+                              </button>
+                           </>
+                        )}
+                        <button onClick={() => { stopSharing(); setMode("home"); }} className="bg-zinc-900 border-2 border-zinc-800 text-zinc-400 hover:text-white font-black py-6 rounded-[24px] text-lg uppercase tracking-tighter active:scale-95">
+                           Volver
+                        </button>
+                     </div>
                   </div>
 
-                  <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl flex items-center gap-5">
-                    <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center shrink-0">
-                       <Info className="text-emerald-500" size={24} />
-                    </div>
-                    <div className="text-xs text-zinc-500 leading-relaxed font-medium">
-                       Comparte el código de sala con otros dispositivos. Una vez se unan, aparecerán en la lista de la derecha para ser aprobados.
-                    </div>
-                  </div>
-                </div>
-
-                {/* LADO DERECHO: COLUMNA DE USUARIOS */}
-                <div className="space-y-6 lg:h-[calc(100vh-280px)] lg:sticky lg:top-32">
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-[32px] overflow-hidden flex flex-col h-full shadow-2xl">
-                    <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-800/20">
-                       <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                         <Users size={14} className="text-emerald-500" /> Espectadores
-                       </h3>
-                       <div className="bg-emerald-500/10 px-2 py-0.5 rounded text-[10px] font-bold text-emerald-500 border border-emerald-500/20">
-                          {participants.length}
-                       </div>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                       {/* Solicitudes - PRIORIDAD */}
-                       <AnimatePresence>
-                         {pendingRequests.map(req => (
-                           <motion.div 
-                              key={req.id}
-                              initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
-                              className="bg-emerald-500/5 border border-emerald-500/20 p-4 rounded-2xl ring-1 ring-emerald-500/10"
-                           >
-                              <div className="flex items-center gap-3 mb-4">
-                                 <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-zinc-950 font-black shadow-lg shadow-emerald-500/30">
-                                    {req.name.charAt(0)}
-                                 </div>
-                                 <div className="flex flex-col min-w-0">
-                                    <span className="text-xs font-black truncate text-emerald-500">{req.name}</span>
-                                    <span className="text-[9px] text-zinc-500 font-bold">Solicita entrar</span>
-                                 </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                 <button 
-                                    onClick={() => approveAccess(req.id)}
-                                    className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md shadow-emerald-500/10"
-                                 >
-                                    Aceptar
-                                 </button>
-                                 <button 
-                                    onClick={() => denyAccess(req.id)}
-                                    className="bg-zinc-800 hover:bg-zinc-700 text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider"
-                                 >
-                                    No
-                                 </button>
-                              </div>
-                           </motion.div>
-                         ))}
-                       </AnimatePresence>
-
-                       {/* Miembros Activos */}
-                       <div className="space-y-3">
-                          {participants.filter(p => p.id !== myId).length === 0 && pendingRequests.length === 0 && (
-                             <div className="text-center py-20 flex flex-col items-center gap-4 opacity-20">
-                                <Users size={40} />
-                                <span className="text-[10px] font-black uppercase tracking-widest">Sin actividad</span>
-                             </div>
-                          )}
-                          
-                          {participants.filter(p => p.id !== myId).map(p => (
-                             <div key={p.id} className="group relative bg-zinc-950 border border-zinc-800 p-3.5 rounded-2xl flex items-center gap-3 transition-all hover:border-emerald-500/30">
-                                <div className="w-10 h-10 bg-zinc-800 rounded-xl flex items-center justify-center text-xs font-black text-emerald-500 border border-zinc-700 shadow-inner">
-                                   {p.name.charAt(0)}
-                                </div>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                    <span className="text-xs font-black truncate text-zinc-300 group-hover:text-emerald-500 transition-colors">{p.name}</span>
-                                    <div className="flex items-center gap-1.5 mt-0.5">
-                                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                       <span className="text-[9px] text-zinc-600 font-black uppercase tracking-tighter">Viendo ahora</span>
+                  {/* LISTA DERECHA: AUDIENCIA */}
+                  <div className="bg-zinc-900 border-4 border-zinc-800 rounded-[32px] flex flex-col h-[600px] overflow-hidden shadow-xl">
+                     <div className="p-5 border-b-2 border-zinc-800 flex justify-between items-center bg-zinc-800/20">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Espectadores ({participants.length})</span>
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                     </div>
+                     <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                         {/* Solicitudes de Acceso */}
+                         <AnimatePresence>
+                           {pendingRequests.map(req => (
+                              <motion.div 
+                                 key={req.id} 
+                                 initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
+                                 className="bg-emerald-500 p-4 rounded-2xl flex flex-col gap-3 shadow-lg shadow-emerald-500/10"
+                              >
+                                 <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-zinc-950 rounded-lg flex items-center justify-center text-emerald-500 font-black">{req.name.charAt(0)}</div>
+                                    <div className="flex flex-col min-w-0">
+                                       <span className="text-xs font-black text-zinc-950 truncate">{req.name}</span>
+                                       <span className="text-[8px] font-black text-zinc-950/60 uppercase">Pide acceso</span>
                                     </div>
-                                </div>
-                             </div>
-                          ))}
-                       </div>
-                    </div>
-                    
-                    {isSharing && (
-                       <div className="p-4 bg-emerald-500/5 border-t border-zinc-800">
-                          <div className="bg-emerald-500/20 px-3 py-2 rounded-xl border border-emerald-500/20 flex items-center justify-center gap-2">
-                             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                             <span className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.1em]">CONEXIÓN CIFRADA P2P</span>
-                          </div>
-                       </div>
-                    )}
+                                 </div>
+                                 <button onClick={() => approveAccess(req.id)} className="bg-zinc-950 text-emerald-500 font-black py-3 rounded-xl text-xs uppercase tracking-widest hover:bg-zinc-900 transition-all border border-zinc-800">Ceder Paso</button>
+                              </motion.div>
+                           ))}
+                         </AnimatePresence>
+                         
+                         {/* Usuarios Conectados */}
+                         {participants.filter(p => p.id !== myId).map(p => (
+                            <div key={p.id} className="bg-zinc-950 border-2 border-zinc-800 p-4 rounded-2xl flex items-center gap-3">
+                               <div className="w-10 h-10 bg-zinc-900 rounded-lg flex items-center justify-center text-emerald-500 font-bold border border-zinc-800">{p.name.charAt(0)}</div>
+                               <div className="flex flex-col flex-1 min-w-0">
+                                  <span className="text-xs font-black truncate">{p.name}</span>
+                                  <span className="text-[8px] font-bold text-zinc-600 uppercase">En el sistema</span>
+                               </div>
+                            </div>
+                         ))}
+                         
+                         {participants.filter(p => p.id !== myId).length === 0 && pendingRequests.length === 0 && (
+                            <div className="flex flex-col items-center justify-center py-20 opacity-20">
+                               <Users size={32} />
+                               <span className="text-[8px] font-black uppercase tracking-[0.3em] mt-2">Sala Vacía</span>
+                            </div>
+                         )}
+                     </div>
+                     
+                     <div className="p-4 bg-zinc-800/10 border-t-2 border-zinc-800 flex items-center justify-center gap-2">
+                        <ShieldCheck size={14} className="text-emerald-500/40" />
+                        <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest italic">Cifrado de Extremo a Extremo</span>
+                     </div>
                   </div>
-                </div>
-              </div>
-            </motion.div>
+               </div>
+            </div>
           )}
 
           {mode === "watch" && (
-            <motion.div
-              key="watch"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-6"
-              style={{ maxWidth: "1400px", margin: "0 auto", height: isFullscreen ? "100vh" : "calc(100vh - 160px)" }}
-            >
-              {accessStatus !== "granted" ? (
-                <div className="flex items-center justify-center h-full">
-                   <div className="bg-zinc-900 border border-zinc-800 p-10 rounded-[40px] w-full max-w-lg text-center shadow-2xl">
-                      <div className="w-20 h-20 bg-emerald-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                         <Tv className="text-emerald-500 w-10 h-10" />
-                      </div>
-                      <h2 className="text-3xl font-black mb-2 tracking-tight">Ver Transmisión</h2>
-                      <p className="text-zinc-500 text-sm mb-8">Ingresa el código para conectarte al televisor remoto</p>
-                      
-                      <div className="space-y-6">
-                        <input
-                          type="text"
-                          value={roomId}
-                          onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                          placeholder="CÓDIGO DE SALA"
-                          disabled={accessStatus === "requesting"}
-                          className="bg-zinc-950 border-2 border-zinc-800 focus:border-emerald-500 px-8 py-5 rounded-3xl font-mono text-3xl font-black text-emerald-500 focus:outline-none transition-all w-full text-center tracking-[0.3em] shadow-inner"
-                        />
-                        
-                        {accessStatus === "requesting" ? (
-                           <div className="flex flex-col gap-4">
-                              <div className="bg-zinc-800 p-5 rounded-3xl text-zinc-400 font-bold flex items-center justify-center gap-3 animate-pulse border border-zinc-700">
-                                 <ShieldCheck size={24} /> ESPERANDO APROBACIÓN...
-                              </div>
-                              <button onClick={requestAccess} className="text-[10px] text-emerald-500 font-black uppercase tracking-widest hover:underline text-center">Re-enviar solicitud</button>
-                           </div>
-                        ) : (
-                           <button
-                             onClick={requestAccess}
-                             className="w-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black py-5 px-8 rounded-3xl transition-all shadow-xl shadow-emerald-500/20 text-lg uppercase active:scale-[0.98]"
-                           >
-                             UNIRSE AHORA
-                           </button>
-                        )}
-                        
-                        {accessStatus === "denied" && (
-                           <motion.p initial={{y:10}} animate={{y:0}} className="text-red-500 font-bold bg-red-500/10 p-4 rounded-2xl border border-red-500/20 text-xs text-center">Acceso rechazado por el emisor</motion.p>
-                        )}
-                      </div>
-                   </div>
-                </div>
-              ) : (
-                <div className={`grid ${isFullscreen ? 'grid-cols-1' : 'lg:grid-cols-[1fr,140px]'} gap-4 h-full`}>
-                   <div 
-                      ref={videoContainerRef}
-                      className="relative bg-black rounded-[40px] overflow-hidden shadow-2xl border border-zinc-900 group"
-                   >
-                      <video 
-                        ref={remoteVideoRef} 
-                        autoPlay 
-                        playsInline 
-                        muted={isMuted}
-                        style={{ width: "100%", height: "100%", objectFit: "contain" }}
-                        className={`transition-all duration-1000 ${isPaused ? "blur-[60px] opacity-30 grayscale scale-110" : ""}`}
-                      />
-                      
-                      {isPaused && (
-                         <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
-                            <motion.div 
-                              initial={{scale:0.9, opacity:0}} animate={{scale:1, opacity:1}}
-                              className="bg-zinc-900/40 backdrop-blur-2xl p-12 rounded-[50px] border border-white/5 flex flex-col items-center gap-6"
-                            >
-                               <div className="w-20 h-20 bg-amber-500/20 rounded-full flex items-center justify-center border border-amber-500/30">
-                                  <Pause size={40} className="text-amber-500" />
-                               </div>
-                               <div className="text-center">
-                                  <h3 className="text-2xl font-black text-white uppercase tracking-[0.2em] mb-2">Transmisión en Pausa</h3>
-                                  <p className="text-zinc-400 text-xs font-medium">El emisor ha ocultado la vista temporalmente</p>
-                               </div>
-                            </motion.div>
+            <div key="watch" className="animate-in fade-in duration-500">
+                {accessStatus !== "granted" ? (
+                 <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
+                    <div className="bg-zinc-900 border-4 border-zinc-800 p-6 md:p-8 rounded-[32px] w-full max-w-sm text-center shadow-2xl">
+                       <div className="w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-xl shadow-emerald-500/10">
+                          <Tv className="text-zinc-950 w-8 h-8" />
+                       </div>
+                       <h2 className="text-3xl font-black mb-1 uppercase tracking-tighter">Entrar a Sala</h2>
+                       <p className="text-zinc-500 font-bold text-[10px] uppercase tracking-widest mb-8">Ingresa el código del emisor</p>
+                       
+                       <div className="space-y-4">
+                         <input
+                           type="text"
+                           value={roomId}
+                           onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+                           placeholder="CÓDIGO"
+                           disabled={accessStatus === "requesting"}
+                           className="bg-black border-4 border-zinc-800 focus:border-emerald-500 px-4 py-4 rounded-2xl font-mono text-4xl font-black text-emerald-500 focus:outline-none transition-all w-full text-center tracking-[0.2em] shadow-inner"
+                         />
+                         
+                         {accessStatus === "requesting" ? (
+                            <div className="bg-zinc-800 py-4 rounded-2xl text-zinc-400 font-black text-[10px] uppercase tracking-widest animate-pulse border-2 border-zinc-700">
+                               Esperando Aprobación...
+                            </div>
+                         ) : (
+                            <button onClick={requestAccess} className="w-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black py-4 rounded-2xl transition-all shadow-xl shadow-emerald-500/10 text-lg uppercase tracking-tighter active:scale-95">
+                               Conectar Ahora
+                            </button>
+                         )}
+                         
+                         {accessStatus === "denied" && (
+                            <p className="text-red-500 font-black bg-red-500/10 p-3 rounded-xl border-2 border-red-500/20 text-[9px] uppercase tracking-widest text-center">Acceso rechazado</p>
+                         )}
+                         <button onClick={() => setMode("home")} className="text-[9px] text-zinc-600 font-black uppercase tracking-widest hover:text-zinc-400">Volver al inicio</button>
+                       </div>
+                    </div>
+                 </div>
+               ) : (
+                 <div className={`flex flex-col ${isFullscreen ? '' : 'lg:flex-row'} gap-6 h-[calc(100vh-160px)]`}>
+                    <div className="flex-1 relative bg-black rounded-[40px] overflow-hidden border-4 border-zinc-800 group shadow-2xl">
+                       <video ref={remoteVideoRef} autoPlay playsInline className={`w-full h-full object-contain ${isPaused ? 'opacity-20 grayscale' : ''}`} />
+                       
+                       {isPaused && (
+                         <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/40">
+                            <div className="bg-amber-500 text-amber-950 px-8 py-4 rounded-2xl font-black uppercase tracking-widest animate-pulse">Reproducción en Pausa</div>
                          </div>
-                      )}
-                      
-                      <div className="absolute top-8 left-8 flex items-center gap-3">
-                         <div className="bg-emerald-500/10 backdrop-blur-md px-4 py-2 rounded-full border border-emerald-500/20 flex items-center gap-2">
-                            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_#10b981]" />
-                            <span className="text-emerald-500 text-[10px] font-black uppercase tracking-wider">{status}</span>
-                         </div>
-                      </div>
+                       )}
 
-                      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-zinc-900/60 backdrop-blur-2xl px-6 py-4 rounded-[32px] border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-4 group-hover:translate-y-0 z-20">
-                          <button onClick={reSync} className="p-3 bg-emerald-500/20 text-emerald-500 rounded-2xl hover:bg-emerald-500/30 transition-all" title="Re-sincronizar">
+                       {/* Barra de Controles para Receptor */}
+                       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-zinc-950 border-2 border-zinc-800 px-6 py-3 rounded-full opacity-0 group-hover:opacity-100 transition-all z-20">
+                          <button onClick={reSync} className="p-3 bg-emerald-500/20 text-emerald-500 rounded-xl hover:bg-emerald-500/30" title="Sincronizar">
                               <RefreshCw size={20} />
                           </button>
-                          <div className="w-px h-6 bg-white/10 mx-1" />
-                          <button onClick={() => setIsMuted(!isMuted)} className="p-3 text-white hover:bg-white/10 rounded-2xl transition-all" title={isMuted ? "Activar audio" : "Silenciar"}>
+                          <button onClick={() => setIsMuted(!isMuted)} className="p-3 text-white hover:bg-zinc-800 rounded-xl" title="Audio">
                              {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
                           </button>
-                          <button onClick={toggleFullscreen} className="p-3 text-white hover:bg-white/10 rounded-2xl transition-all" title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
+                          <button onClick={toggleFullscreen} className="p-3 text-white hover:bg-zinc-800 rounded-xl" title="Pantalla Completa">
                              {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
                           </button>
-                          <div className="w-px h-6 bg-white/10 mx-1" />
-                          <button onClick={() => { stopSharing(); setMode("home"); }} className="p-3 bg-red-500/20 text-red-500 rounded-2xl hover:bg-red-500/30 transition-all" title="Cerrar conexión">
+                          <button onClick={() => { stopSharing(); setMode("home"); }} className="p-3 bg-red-500/20 text-red-500 rounded-xl hover:bg-red-500/30" title="Cerrar">
                               <LogOut size={20} />
                           </button>
-                      </div>
-                   </div>
+                       </div>
+                    </div>
 
-                   {!isFullscreen && (
-                      <div className="flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
-                         <div className="group relative bg-zinc-900 border-2 border-emerald-500 p-1 rounded-3xl transition-transform hover:scale-105 active:scale-95 cursor-pointer shadow-xl shadow-emerald-500/10 aspect-video shrink-0">
-                             <div className="w-full h-full bg-zinc-950 rounded-2xl overflow-hidden relative">
-                                <div className="absolute inset-0 flex items-center justify-center bg-zinc-800/50">
-                                   <Monitor className="text-emerald-500 opacity-20" size={32} />
-                                </div>
-                                <div className="absolute bottom-0 left-0 right-0 bg-emerald-500 py-1.5 px-2 text-[8px] font-black text-zinc-950 text-center uppercase tracking-tighter">
-                                   Emisor
-                                </div>
+                    {!isFullscreen && (
+                      <div className="w-full lg:w-40 flex flex-col gap-4">
+                          <div className="bg-zinc-900 border-4 border-zinc-800 p-4 rounded-[32px] flex flex-col items-center gap-4">
+                             <span className="text-[8px] font-black uppercase tracking-widest text-zinc-600">En la sala</span>
+                             <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-zinc-950 font-black shadow-lg shadow-emerald-500/10 border-2 border-emerald-400" title="Tú">
+                                 TÚ
                              </div>
-                         </div>
-
-                         <div className="grid gap-3">
-                            <div className="aspect-square bg-zinc-900 border border-zinc-800 rounded-3xl flex flex-col items-center justify-center gap-2 group hover:border-emerald-500/40 transition-all cursor-default shadow-lg shadow-black/40">
-                               <div className="w-14 h-14 bg-zinc-800 rounded-2xl flex items-center justify-center text-emerald-500 font-black border border-zinc-700 shadow-inner group-hover:scale-110 transition-transform">
-                                  TÚ
-                               </div>
-                               <span className="text-[9px] font-black text-zinc-500 uppercase group-hover:text-emerald-500">Espectador</span>
-                            </div>
-                            
-                            {participants.filter(p => p.id !== myId).map(p => (
-                               <div key={p.id} className="aspect-square bg-zinc-900 border border-zinc-800 rounded-3xl flex flex-col items-center justify-center gap-2 shadow-lg shadow-black/40 animate-in fade-in zoom-in-75">
-                                  <div className="w-12 h-12 bg-zinc-800 rounded-2xl flex items-center justify-center text-zinc-500 font-black border border-zinc-700 opacity-50">
-                                     {p.name?.charAt(0) || "U"}
-                                  </div>
-                                  <span className="text-[8px] font-black text-zinc-600 uppercase truncate px-2 w-full text-center">{p.name || "Usuario"}</span>
-                               </div>
-                            ))}
-                         </div>
+                             {participants.filter(p => p.id !== myId).map(p => (
+                                <div key={p.id} className="w-12 h-12 bg-zinc-950 border-2 border-zinc-800 rounded-2xl flex items-center justify-center text-zinc-500 font-black shadow-inner" title={p.name}>
+                                   {p.name?.charAt(0) || "U"}
+                                </div>
+                             ))}
+                          </div>
                       </div>
-                   )}
-                </div>
-              )}
-            </motion.div>
+                    )}
+                 </div>
+               )}
+            </div>
           )}
       </main>
 
