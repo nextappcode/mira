@@ -25,6 +25,23 @@ async function startServer() {
 
   // Room management: RoomID -> Map<SocketID, WebSocket>
   const rooms = new Map<string, Map<string, WebSocket>>();
+  // RoomID -> Map<SocketID, string>
+  const userNames = new Map<string, Map<string, string>>();
+
+  const broadcastUserList = (roomId: string) => {
+    const sockets = rooms.get(roomId);
+    const names = userNames.get(roomId);
+    if (!sockets || !names) return;
+
+    const list = Array.from(names.entries()).map(([id, name]) => ({ id, name }));
+    const message = JSON.stringify({ type: "user-list", participants: list });
+
+    sockets.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  };
 
   server.on("upgrade", (request, socket, head) => {
     const url = request.url || "";
@@ -55,22 +72,19 @@ async function startServer() {
 
         switch (message.type) {
           case "join":
-            console.log(`[WS] User ${socketId} joining room: ${message.room}`);
+            console.log(`[WS] User ${socketId} joining room: ${message.room} as ${message.name || "Unknown"}`);
             currentRoom = message.room;
             if (!rooms.has(currentRoom!)) {
               rooms.set(currentRoom!, new Map());
+              userNames.set(currentRoom!, new Map());
               console.log(`[WS] Created new room: ${currentRoom}`);
             }
             rooms.get(currentRoom!)?.set(socketId, ws);
+            userNames.get(currentRoom!)?.set(socketId, message.name || "Usuario");
             console.log(`[WS] Room ${currentRoom} now has ${rooms.get(currentRoom!)?.size} participants`);
             
-            // Notify others in the room
-            rooms.get(currentRoom!)?.forEach((client, id) => {
-              if (id !== socketId && client.readyState === WebSocket.OPEN) {
-                console.log(`[WS] Notifying ${id} that ${socketId} joined`);
-                client.send(JSON.stringify({ type: "user-joined", userId: socketId }));
-              }
-            });
+            // Broadcast the entire list to everyone
+            broadcastUserList(currentRoom!);
             break;
 
           case "request-access":
@@ -98,8 +112,8 @@ async function startServer() {
             if (targetClient && targetClient.readyState === WebSocket.OPEN) {
               targetClient.send(JSON.stringify({ 
                 type: "access-response", 
-                granted: message.granted,
-                broadcasterId: socketId
+                broadcasterId: socketId,
+                granted: message.granted
               }));
             }
             break;
