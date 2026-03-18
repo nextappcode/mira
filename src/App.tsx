@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Monitor, Tv, Share2, Play, StopCircle, Copy, Check, Info, Maximize, Minimize, Volume2, VolumeX, UserPlus, X, ShieldCheck, Pause, EyeOff, Eye, Users, RefreshCw, LogOut } from "lucide-react";
+import { Monitor, Tv, Share2, Play, StopCircle, Copy, Check, Info, Maximize, Minimize, Volume2, VolumeX, UserPlus, X, ShieldCheck, Pause, EyeOff, Eye, Users } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 const STUN_SERVERS = {
@@ -10,32 +10,15 @@ const STUN_SERVERS = {
   ],
 };
 
-// Munge SDP to prefer H246 (Essential for older TV hardware decoders)
-const preferH264 = (sdp: string) => {
-  const lines = sdp.split("\r\n");
-  const mLineIndex = lines.findIndex(l => l.startsWith("m=video"));
-  if (mLineIndex === -1) return sdp;
-
-  const mLineParts = lines[mLineIndex].split(" ");
-  const h264Payloads: string[] = [];
-  
-  // Find all H264 payload types
-  lines.forEach(l => {
-    if (l.startsWith("a=rtpmap:") && l.includes("H264/90000")) {
-      const match = l.match(/a=rtpmap:(\d+)/);
-      if (match) h264Payloads.push(match[1]);
-    }
-  });
-
-  if (h264Payloads.length > 0) {
-    const otherPayloads = mLineParts.slice(3).filter(p => !h264Payloads.includes(p));
-    lines[mLineIndex] = mLineParts.slice(0, 3).join(" ") + " " + h264Payloads.join(" ") + " " + otherPayloads.join(" ");
-  }
-  
-  return lines.join("\r\n");
-};
-
 type Mode = "home" | "share" | "watch";
+
+// Cross-browser WebRTC prefixes for older TVs
+const RTCPeerConnection = (window as any).RTCPeerConnection || (window as any).webkitRTCPeerConnection || (window as any).mozRTCPeerConnection;
+const RTCSessionDescription = (window as any).RTCSessionDescription || (window as any).webkitRTCSessionDescription || (window as any).mozRTCSessionDescription;
+const RTCIceCandidate = (window as any).RTCIceCandidate || (window as any).webkitRTCIceCandidate || (window as any).mozRTCIceCandidate;
+
+// Browser Compatibility Check
+const hasWebRTC = typeof RTCPeerConnection !== "undefined";
 
 export default function App() {
   const [mode, setMode] = useState<Mode>("home");
@@ -51,6 +34,12 @@ export default function App() {
   const [accessStatus, setAccessStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
   const [isConnected, setIsConnected] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const isPausedRef = useRef(false);
+  
+  const updatePauseState = (paused: boolean) => {
+    setIsPaused(paused);
+    isPausedRef.current = paused;
+  };
   const [participants, setParticipants] = useState<{id: string, name: string}[]>([]);
   
   const isSharingRef = useRef(false);
@@ -63,80 +52,53 @@ export default function App() {
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    // Keep a cleaner console for remaining app-level noise
+    // Aggressively suppress expected Vite HMR errors in this environment
+    const isHmrError = (msg: string) => 
+      msg.includes("WebSocket closed without opened") || 
+      msg.includes("failed to connect to websocket") ||
+      msg.includes("Browsing Topics API");
+
     const handleRejection = (event: PromiseRejectionEvent) => {
-      const msg = String(event.reason || "").toLowerCase();
-      if (msg.includes("websocket") || msg.includes("receiving end")) {
+      const msg = event.reason?.message || String(event.reason);
+      if (isHmrError(msg)) {
         event.preventDefault();
         event.stopPropagation();
       }
     };
-    window.addEventListener("unhandledrejection", handleRejection);
-    return () => window.removeEventListener("unhandledrejection", handleRejection);
-  }, []);
 
-  // Monitoring for frozen video on TV
-  useEffect(() => {
-    let checkInterval: number;
-    if (mode === "watch" && remoteVideoRef.current) {
-      let lastTime = 0;
-      let freezeCount = 0;
-      
-      checkInterval = window.setInterval(() => {
-        const video = remoteVideoRef.current;
-        if (!video || video.paused || video.ended || video.readyState < 2) return;
-        
-        if (video.currentTime === lastTime && status.includes("Conectado")) {
-           freezeCount++;
-           if (freezeCount > 6) { // ~3 seconds frozen
-             console.log("[mira] Detectada imagen estática, re-activando...");
-             video.play().catch(() => {});
-             freezeCount = 0;
-           }
-        } else {
-          freezeCount = 0;
-        }
-        lastTime = video.currentTime;
-      }, 500);
-    }
-    return () => clearInterval(checkInterval);
-  }, [mode, status]);
+    // Also override console.error for these specific strings
+    const originalError = console.error;
+    console.error = (...args) => {
+      const msg = args.map(String).join(" ");
+      if (isHmrError(msg)) return;
+      originalError.apply(console, args);
+    };
+
+    window.addEventListener("unhandledrejection", handleRejection);
+    return () => {
+      window.removeEventListener("unhandledrejection", handleRejection);
+      console.error = originalError;
+    };
+  }, []);
 
   useEffect(() => {
     let reconnectTimeout: number;
     let initialDelayTimeout: number;
 
     const connect = () => {
-      // Use absolute URL detection to avoid issues on some older TV browsers
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/ws-signal`;
-      console.log(`[mira] Intentando conectar a: ${wsUrl}`);
-      
-      const socket = new WebSocket(wsUrl);
+      const socket = new WebSocket(`${protocol}//${window.location.host}/ws-signal`);
       socketRef.current = socket;
 
       socket.onopen = () => {
-        console.log("[mira] WebSocket conectado exitosamente");
+        console.log("WebSocket connected successfully");
         setStatus("Conectado al servidor");
         setIsConnected(true);
-        reconnectAttempts.current = 0; // Reset attempts on success
-        
-        // Start Heartbeat to prevent Render/CDN timeouts
-        const heartbeat = setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ type: "heartbeat" }));
-          } else {
-            clearInterval(heartbeat);
-          }
-        }, 30000);
       };
 
       socket.onmessage = async (event) => {
-        // Keep-alive/Heartbeat log (optional, only for debug)
-        // console.debug("[mira] Mensaje recibido del servidor");
         try {
           const message = JSON.parse(event.data);
-          console.log(`[mira] Mensaje tipo: ${message.type}`);
           
           if (message.type === "your-id") {
             setMyId(message.id);
@@ -149,23 +111,9 @@ export default function App() {
                peerConnections.current.delete(message.userId);
                setParticipants(prev => prev.filter(p => p.id !== message.userId));
              } else {
-              // Broadcaster left the room
-              const finalMessage = "Transmisión finalizada por el emisor. Volviendo al inicio...";
-              setStatus(finalMessage);
+              setStatus("Transmisión finalizada por el emisor");
               if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
               setHasAudio(false);
-              
-              // If we are in watch mode, return to home after a few seconds
-              if (mode === "watch") {
-                setTimeout(() => {
-                  setMode("home");
-                  setAccessStatus("idle");
-                  setStatus("Listo para conectar");
-                  if (document.fullscreenElement) {
-                    document.exitFullscreen().catch(() => {});
-                  }
-                }, 3500);
-              }
             }
           } else if (message.type === "request-access") {
             setPendingRequests(prev => {
@@ -186,18 +134,18 @@ export default function App() {
             }
           } else if (message.type === "user-joined") {
             if (isSharingRef.current) {
-              // Proactive fix: If a user joins and we are sharing, 
-              // add them to pending immediately so the button appears
               setPendingRequests(prev => {
                 if (prev.find(r => r.id === message.userId)) return prev;
                 return [...prev, { id: message.userId, name: "Usuario esperando..." }];
               });
               setStatus("Un usuario solicita acceso");
+              // Sync current pause state with the new user using the Ref
+              safeSend({ type: "pause-state", room: roomId, paused: isPausedRef.current });
             }
           } else if (message.type === "pause-state") {
+            console.log("Recibido cambio de estado de pausa:", message.paused);
             setIsPaused(message.paused);
-          } else if (message.type === "user-list") {
-            setParticipants(message.participants);
+            isPausedRef.current = message.paused;
           }
         } catch (err) {
           // Silently handle JSON parse errors
@@ -265,8 +213,6 @@ export default function App() {
       if (data.type === "offer") {
         await pc.setRemoteDescription(new RTCSessionDescription(data));
         const answer = await pc.createAnswer();
-        // Force H264 on the answer
-        answer.sdp = preferH264(answer.sdp!);
         await pc.setLocalDescription(answer);
         sendSignal(answer, senderId);
         setStatus("Conectado (Recibiendo)");
@@ -300,69 +246,77 @@ export default function App() {
     };
 
     pc.oniceconnectionstatechange = () => {
-      const state = pc.iceConnectionState;
-      if (state === "disconnected" || state === "failed" || state === "closed") {
+      if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed") {
         if (mode === "watch") {
-          const lostMsg = "Conexión perdida con el emisor. Volviendo al inicio...";
-          setStatus(lostMsg);
+          setStatus("Conexión perdida");
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
           setHasAudio(false);
-          
-           // Return to home after delay
-           setTimeout(() => {
-            if (mode === "watch") {
-               setMode("home");
-               setAccessStatus("idle");
-               setStatus("Listo para conectar");
-               if (document.fullscreenElement) {
-                document.exitFullscreen().catch(() => {});
-               }
-            }
-          }, 3500);
          }
          peerConnections.current.delete(targetId);
          setParticipants(prev => prev.filter(p => p.id !== targetId));
        }
      };
 
-    pc.ontrack = (event) => {
-      console.log("¡Señal detectada! Forzando decodificador...");
-      if (remoteVideoRef.current) {
-        const video = remoteVideoRef.current;
-        video.srcObject = null;
-        video.srcObject = event.streams[0];
-        
-        // THE "LEGACY NUDGE" (V3)
-        // High-frequency attempt to wake up old Android/TV decoders
-        let attempts = 0;
-        const kickstart = () => {
-          if (!video || !event.streams[0] || attempts > 10) return;
-          attempts++;
-          
-          video.play().then(() => {
-            console.log("[mira] Reproducción iniciada con éxito");
-            // Briefly toggle volume to ensure audio engine is also awake
-            const v = video.volume;
-            video.volume = 0.01;
-            setTimeout(() => { video.volume = v; }, 200);
-          }).catch(() => {
-            console.debug("[mira] Reintentando arranque...");
-            setTimeout(kickstart, 1000);
-          });
-        };
-        
-        // Some TVs need a tiny delay after setting srcObject
-        setTimeout(kickstart, 500);
-        
-        // Auto-fullscreen logic
-        if (mode === "watch" && !document.fullscreenElement && videoContainerRef.current) {
-          videoContainerRef.current.requestFullscreen().catch(() => {});
-        }
+    const handleStream = (stream: MediaStream) => {
+      const videoEl = remoteVideoRef.current;
+      if (!videoEl || !stream) return;
 
-        const audioTracks = event.streams[0].getAudioTracks();
-        setHasAudio(audioTracks.length > 0);
+      // STOPSHIP: Use a Ref to ensure we only assign the source ONCE for the entirety of the connection
+      if ((videoEl as any).__lastStreamId === stream.id) {
+         console.debug("Stream ya asignado (ID coincidente), bloqueando re-carga redundante.");
+         return;
+      }
+      (videoEl as any).__lastStreamId = stream.id;
+
+      console.log("¡Nueva señal de video recibida! ID:", stream.id, ". Vinculando...");
+      
+      if ('srcObject' in videoEl) {
+         videoEl.srcObject = stream;
+      } else {
+         (videoEl as any).src = window.URL.createObjectURL(stream as any);
+      }
+      
+      videoEl.muted = isMuted;
+
+      const attemptPlay = () => {
+        console.log("Intentando reproducir video...");
+        videoEl.play().catch(e => {
+          console.warn("Autoplay block o error hardware:", e.name, e.message);
+          // Retry logic
+          if (e.name !== 'AbortError') {
+             setTimeout(() => {
+                if (videoEl.paused) videoEl.play().catch(() => {});
+             }, 1000);
+          }
+        });
+      };
+
+      // In TVs, sometimes onloadedmetadata is unreliable. Try immediately AND on event.
+      attemptPlay();
+      videoEl.onloadedmetadata = () => {
+         console.log("Metadatos cargados");
+         attemptPlay();
+      };
+      
+      // Backup attempt just in case loadedmetadata doesn't fire immediately
+      setTimeout(attemptPlay, 1000);
+
+      if (mode === "watch" && !document.fullscreenElement && videoContainerRef.current) {
+        const el = videoContainerRef.current;
+        const requestFS = el.requestFullscreen || (el as any).webkitRequestFullscreen || (el as any).mozRequestFullScreen || (el as any).msRequestFullscreen;
+        if (requestFS) requestFS.call(el).catch(() => {});
+      }
+
+      const audioTracks = stream.getAudioTracks();
+      setHasAudio(audioTracks.length > 0);
+    };
+
+    pc.ontrack = (event) => {
+      if (event.streams && event.streams[0]) {
+        handleStream(event.streams[0]);
       }
     };
+    (pc as any).onaddstream = (event: any) => handleStream(event.stream);
 
     peerConnections.current.set(targetId, pc);
     return pc;
@@ -375,17 +329,12 @@ export default function App() {
     }
 
     try {
-      // First join the room to be ready for incoming requests
-      const joinSent = safeSend({ type: "join", room: roomId, name: "Escritorio (Emisor)" });
-      if (!joinSent) {
-        throw new Error("No se pudo enviar mensaje de unión. Revisa la conexión.");
-      }
-
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { 
-          width: { ideal: 1280 }, // 720p is much more stable for TV decoders
-          height: { ideal: 720 },
-          frameRate: { ideal: 25 }
+          cursor: "always",
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30 }
         } as any,
         audio: true
       });
@@ -395,6 +344,7 @@ export default function App() {
         localVideoRef.current.srcObject = stream;
       }
 
+      safeSend({ type: "join", room: roomId });
       setIsSharing(true);
       setStatus("Sala abierta. Esperando solicitudes...");
 
@@ -426,24 +376,12 @@ export default function App() {
       if (streamRef.current) {
         const pc = createPeerConnection(userId);
         
-        // Implement Simulcast (Adaptive Quality)
-        const videoTrack = streamRef.current.getVideoTracks()[0];
-        const audioTrack = streamRef.current.getAudioTracks()[0];
-
-        // Use straightforward track adding for max compatibility
-        if (audioTrack) pc.addTrack(audioTrack, streamRef.current);
-        if (videoTrack) {
-          pc.addTransceiver(videoTrack, {
-            streams: [streamRef.current],
-            sendEncodings: [
-              { maxBitrate: 1800000, maxFramerate: 25 } // Single stable stream
-            ]
-          });
-        }
+        // Simple track addition for maximum compatibility with old TVs
+        streamRef.current.getTracks().forEach(track => {
+           if (streamRef.current) pc.addTrack(track, streamRef.current);
+        });
 
         const offer = await pc.createOffer();
-        // Force H264 on the offer
-        offer.sdp = preferH264(offer.sdp!);
         await pc.setLocalDescription(offer);
         sendSignal(offer, userId);
       }
@@ -472,7 +410,7 @@ export default function App() {
 
   const togglePause = () => {
     const nextPaused = !isPaused;
-    setIsPaused(nextPaused);
+    updatePauseState(nextPaused);
     safeSend({ type: "pause-state", room: roomId, paused: nextPaused });
   };
 
@@ -483,17 +421,29 @@ export default function App() {
     }
     
     setAccessStatus("requesting");
-    setStatus("Solicitando acceso al emisor...");
     
-    // Requesting fullscreen on the body/document as it's the most reliable for TVs
-    if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {
-          console.log("Primer intento de Fullscreen fallido (esperando aprobación)");
-        });
+    // Cross-browser fullscreen request (prefixed for older TVs)
+    const el = videoContainerRef.current;
+    if (el) {
+      const fsElement = document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement;
+      if (!fsElement) {
+        const requestFS = el.requestFullscreen || (el as any).webkitRequestFullscreen || (el as any).mozRequestFullScreen || (el as any).msRequestFullscreen;
+        if (requestFS) {
+          try {
+            const result = requestFS.call(el);
+            if (result && result.catch) {
+              result.catch(() => { /* Silent fail is expected on some TVs */ });
+            }
+          } catch (e) {
+            console.debug("Fullscreen request failed silently", e);
+          }
+        }
+      }
     }
     
-    if (safeSend({ type: "join", room: roomId, name: "Usuario TV" })) {
+    if (safeSend({ type: "join", room: roomId })) {
       safeSend({ type: "request-access", room: roomId, userName: "Usuario TV" });
+      setStatus("Solicitando acceso...");
     } else {
       setStatus("Error: No hay conexión con el servidor");
       setAccessStatus("idle");
@@ -512,319 +462,473 @@ export default function App() {
   };
 
   const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(err => {
-        console.error(`Error: ${err.message}`);
-      });
+    const el = videoContainerRef.current;
+    if (!el) return;
+
+    const requestFS = el.requestFullscreen || (el as any).webkitRequestFullscreen || (el as any).mozRequestFullScreen || (el as any).msRequestFullscreen;
+    const exitFS = document.exitFullscreen || (document as any).webkitExitFullscreen || (document as any).mozCancelFullScreen || (document as any).msExitFullscreen;
+    const fsElement = document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement;
+
+    if (!fsElement) {
+      if (requestFS) {
+        requestFS.call(el).catch((err: any) => {
+          console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+      } else {
+        // Fallback or alert for very old browsers
+        setStatus("Pantalla completa no soportada");
+      }
     } else {
-      document.exitFullscreen();
+      if (exitFS) exitFS.call(document);
     }
   };
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
+      const fsElement = document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement;
+      setIsFullscreen(!!fsElement);
     };
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    document.addEventListener("mozfullscreenchange", handleFullscreenChange);
+    document.addEventListener("MSFullscreenChange", handleFullscreenChange);
+    
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
+    };
   }, []);
 
-  useEffect(() => {
-    if (accessStatus === "granted" && !document.fullscreenElement) {
-        // Redundant attempt when access is granted
-        document.documentElement.requestFullscreen().catch(() => {});
-    }
-  }, [accessStatus]);
-
-  const reSync = () => {
-    if (remoteVideoRef.current) {
-      console.log("[mira] Re-sincronización manual solicitada");
-      remoteVideoRef.current.play().catch(() => {});
-      // Small trick: toggle mute briefly to wake up some audio/video decoders
-      const wasMuted = isMuted;
-      setIsMuted(true);
-      setTimeout(() => setIsMuted(wasMuted), 200);
-      setStatus("Sincronizando imagen...");
-      setTimeout(() => setStatus("Conectado (Recibiendo)"), 2000);
-    }
-  };
-
   return (
-    <div 
-      style={{ backgroundColor: "#09090b", color: "#f4f4f5", minHeight: "100vh" }}
-      className="bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30"
-    >
-      {/* Header - Simplified for low resources */}
-      <header className="p-4 border-b-2 border-emerald-500/20 bg-zinc-950 sticky top-0 z-50 flex justify-between items-center">
-        <div className="flex items-center gap-4 cursor-pointer" onClick={() => setMode("home")}>
-          <div className="w-12 h-12 bg-emerald-500 rounded-lg flex items-center justify-center border-2 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
-            <Share2 className="text-zinc-950 w-7 h-7" />
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30">
+      {/* Header */}
+      <header className="p-3 border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 flex justify-between items-center h-14">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setMode("home")}>
+          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+            <Share2 className="text-zinc-950 w-6 h-6" />
           </div>
-          <div>
-            <h1 className="text-2xl font-black tracking-tighter uppercase italic leading-none">MIRA</h1>
-            <span className="text-[10px] font-bold text-emerald-500/60 tracking-widest uppercase">Stream Engine</span>
-          </div>
+          <h1 className="text-xl font-bold tracking-tight">mira</h1>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg">
-          <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500 shadow-[0_0_10px_#ef4444]'}`} />
-          <span className="text-[10px] font-black tracking-widest uppercase text-zinc-400">
-            {isConnected ? 'SISTEMA OK' : 'OFFLINE'}
-          </span>
+        <div className="flex items-center gap-2 text-xs font-mono text-zinc-500 bg-zinc-900/50 px-3 py-1.5 rounded-full border border-zinc-800">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+          {isConnected ? 'SISTEMA ONLINE' : 'CONECTANDO...'}
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-4 md:p-8">
+      <main className="max-w-4xl mx-auto p-2 md:p-4 overflow-x-hidden">
+        {!hasWebRTC && (
+          <div className="bg-red-500/20 border border-red-500/50 p-6 rounded-2xl mb-8 flex flex-col items-center text-center">
+            <ShieldCheck className="text-red-500 mb-4" size={48} />
+            <h3 className="text-xl font-bold text-red-100 mb-2">Navegador Incompatible</h3>
+            <p className="text-red-200/80 max-w-md">
+              Tu navegador no soporta la tecnología necesaria para la transmisión en tiempo real (WebRTC). Por favor, intenta usar una versión reciente de Chrome o Edge.
+            </p>
+          </div>
+        )}
+        <AnimatePresence mode="wait">
           {mode === "home" && (
-            <div className="flex flex-col md:flex-row gap-6 mt-6 md:mt-12 h-[calc(100vh-180px)] md:h-auto">
+            <motion.div
+              key="home"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col md:flex-row gap-6 mt-4 md:mt-8"
+            >
               <button
                 onClick={() => { setMode("share"); generateRoomId(); }}
-                className="flex-1 group bg-zinc-900 border-4 border-zinc-800 p-10 rounded-[40px] hover:border-emerald-500 transition-all text-center flex flex-col items-center justify-center gap-6 active:scale-95 active:bg-zinc-800"
+                className="group relative bg-zinc-900 border border-zinc-800 p-6 rounded-3xl hover:border-emerald-500/50 transition-all duration-300 text-left overflow-hidden w-full md:flex-1 min-h-[220px]"
               >
-                <div className="w-24 h-24 bg-emerald-500 rounded-[32px] flex items-center justify-center shadow-2xl group-hover:rotate-6 transition-transform">
-                  <Monitor className="text-zinc-950 w-12 h-12" />
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Monitor size={120} />
                 </div>
-                <div>
-                  <h2 className="text-4xl font-black mb-2 uppercase tracking-tighter">EMITIR</h2>
-                  <p className="text-zinc-500 font-bold text-sm uppercase tracking-widest">Compartir mi pantalla</p>
+                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6">
+                  <Monitor className="text-emerald-500 w-8 h-8" />
                 </div>
-                <div className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-6 py-2 rounded-full font-black text-xs uppercase tracking-widest">
-                  Iniciar Sala
+                <h2 className="text-2xl font-bold mb-3 tracking-tight">Compartir Pantalla</h2>
+                <p className="text-zinc-400 leading-relaxed text-sm">
+                  Envía tu pantalla a otro dispositivo. Genera un código y compártelo con el receptor.
+                </p>
+                <div className="mt-8 flex items-center gap-2 text-emerald-500 font-bold">
+                  Empezar ahora <Play size={16} />
                 </div>
               </button>
 
               <button
                 onClick={() => setMode("watch")}
-                className="flex-1 group bg-zinc-900 border-4 border-zinc-800 p-10 rounded-[40px] hover:border-emerald-500 transition-all text-center flex flex-col items-center justify-center gap-6 active:scale-95 active:bg-zinc-800"
+                className="group relative bg-zinc-900 border border-zinc-800 p-6 rounded-3xl hover:border-emerald-500/50 transition-all duration-300 text-left overflow-hidden w-full md:flex-1 min-h-[220px]"
               >
-                <div className="w-24 h-24 bg-zinc-100 rounded-[32px] flex items-center justify-center shadow-2xl group-hover:-rotate-6 transition-transform">
-                  <Tv className="text-zinc-950 w-12 h-12" />
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Tv size={120} />
                 </div>
-                <div>
-                  <h2 className="text-4xl font-black mb-2 uppercase tracking-tighter">RECIBIR</h2>
-                  <p className="text-zinc-500 font-bold text-sm uppercase tracking-widest">Ver una transmisión</p>
+                <div className="w-14 h-14 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-6">
+                  <Tv className="text-emerald-500 w-8 h-8" />
                 </div>
-                <div className="bg-white/10 text-white border border-white/20 px-6 py-2 rounded-full font-black text-xs uppercase tracking-widest">
-                  Entrar con Código
+                <h2 className="text-2xl font-bold mb-3 tracking-tight">Ver Transmisión</h2>
+                <p className="text-zinc-400 leading-relaxed text-sm">
+                  Recibe la pantalla de otro dispositivo. Ingresa el código de sala para conectar.
+                </p>
+                <div className="mt-8 flex items-center gap-2 text-emerald-500 font-bold">
+                  Unirse a sala <Play size={16} />
                 </div>
               </button>
-            </div>
+            </motion.div>
           )}
+
           {mode === "share" && (
-            <div key="share" className="space-y-6 animate-in fade-in duration-500">
-               {/* Header del Panel */}
-               <div className="bg-zinc-900 border-4 border-zinc-800 p-6 md:p-8 rounded-[32px] flex flex-col md:flex-row justify-between items-center gap-6">
-                  <div className="text-center md:text-left">
-                     <h2 className="text-3xl font-black uppercase tracking-tighter">Panel de Emisor</h2>
-                     <p className="text-emerald-500/60 font-bold text-xs uppercase tracking-widest">Transmitiendo en vivo</p>
+            <motion.div
+              key="share"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col gap-2"
+            >
+              <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-3xl">
+                <div className="flex items-center justify-between gap-4 mb-4">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-bold">Emisión</h2>
+                    <div className="flex items-center gap-2 bg-zinc-950 px-3 py-1 rounded-xl border border-zinc-800">
+                      <span className="font-mono text-emerald-500 font-bold">{roomId || "------"}</span>
+                      <button onClick={copyRoomId} className="text-zinc-500 hover:text-white">
+                        {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex flex-col items-center gap-2">
-                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em]">Código de Sala</span>
-                     <div className="bg-zinc-950 border-2 border-emerald-500/30 px-8 py-3 rounded-2xl flex items-center gap-4 shadow-inner">
-                        <span className="font-mono text-3xl font-black text-emerald-500 tracking-[0.2em]">{roomId || "------"}</span>
-                        <button onClick={copyRoomId} className="p-2 hover:bg-emerald-500/10 rounded-lg transition-all text-emerald-500 active:scale-90" title="Copiar código">
-                           {copied ? <Check size={24} /> : <Copy size={24} />}
-                        </button>
-                     </div>
+                  <div className="bg-black/60 px-3 py-1 rounded-lg text-[10px] font-medium flex items-center gap-2 border border-zinc-800">
+                    <div className={`w-1.5 h-1.5 rounded-full ${isSharing ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`} />
+                    {status}
                   </div>
-               </div>
+                </div>
 
-               <div className="grid lg:grid-cols-[1fr,320px] gap-6">
-                  {/* MONITOR IZQUIERDO: MONITOR DE EMISIÓN */}
-                  <div className="space-y-4">
-                     <div className="bg-black border-4 border-zinc-800 rounded-[40px] overflow-hidden relative aspect-video shadow-2xl">
-                        <video ref={localVideoRef} autoPlay playsInline muted className={`w-full h-full object-contain ${isPaused ? 'opacity-20 grayscale' : ''}`} />
-                        
-                        {isPaused && (
-                           <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/60">
-                              <div className="bg-amber-500 text-amber-950 px-8 py-4 rounded-2xl font-black uppercase tracking-[0.2em] flex items-center gap-3 animate-pulse">
-                                 <Pause size={24} /> Vista en Pausa
-                              </div>
-                           </div>
-                        )}
-                        
-                        {!isSharing && (
-                           <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-800">
-                              <Monitor size={80} className="mb-4 opacity-10" />
-                              <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-40">Monitor de Sistema</p>
-                           </div>
-                        )}
+                <div className="relative aspect-video max-h-[35vh] bg-zinc-950 rounded-2xl border border-zinc-800 overflow-hidden mx-auto">
+                  <video 
+                    ref={localVideoRef} 
+                    autoPlay 
+                    playsInline 
+                    muted 
+                    className={`w-full h-full object-contain transition-all duration-700 ${isPaused ? 'blur-2xl opacity-50 scale-105' : ''}`}
+                  />
+                  {isPaused && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="bg-amber-500/20 backdrop-blur-md px-6 py-3 rounded-2xl border border-amber-500/30 flex items-center gap-3">
+                        <EyeOff className="text-amber-500" />
+                        <span className="text-amber-500 font-bold uppercase tracking-wider text-sm">Transmisión Oculta</span>
+                      </div>
+                    </div>
+                  )}
+                  {!isSharing && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-600">
+                      <Monitor size={48} className="mb-4 opacity-20" />
+                      <p className="text-sm font-medium">Vista previa de pantalla</p>
+                    </div>
+                  )}
+                  {/* Overlay indicators moved to top header above */}
+                </div>
 
-                        {isSharing && !isPaused && (
-                           <div className="absolute top-6 left-6 flex items-center gap-2 bg-red-600 px-3 py-1 rounded-lg">
-                              <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                              <span className="text-white text-[10px] font-black uppercase">En Vivo</span>
-                           </div>
-                        )}
-                     </div>
+                <div className="mt-4 flex gap-3">
+                  {!isSharing ? (
+                    <button
+                      onClick={startSharing}
+                      className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg"
+                    >
+                      <Share2 size={18} /> Compartir Pantalla
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={togglePause}
+                        className={`flex-1 ${isPaused ? 'bg-amber-500' : 'bg-zinc-700'} text-white font-bold py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg`}
+                      >
+                        {isPaused ? <Eye size={18} /> : <EyeOff size={18} />}
+                        {isPaused ? "Reanudar" : "Pausar"}
+                      </button>
+                      <button
+                        onClick={stopSharing}
+                        className="flex-1 bg-red-600 text-white font-bold py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg"
+                      >
+                        <StopCircle size={18} /> Detener
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => { stopSharing(); setMode("home"); }}
+                    className="bg-zinc-800 text-white font-bold py-3 px-6 rounded-xl transition-all text-sm"
+                  >
+                    Volver
+                  </button>
+                </div>
 
-                     {/* BOTONES DE ACCIÓN GIGANTES */}
-                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {!isSharing ? (
-                           <button onClick={startSharing} className="col-span-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black py-6 rounded-[24px] text-xl uppercase tracking-tighter flex items-center justify-center gap-3 shadow-xl shadow-emerald-500/10 active:scale-95">
-                              <Share2 size={24} /> Empezar a Compartir
-                           </button>
-                        ) : (
-                           <>
-                              <button onClick={togglePause} className={`py-6 rounded-[24px] font-black text-lg uppercase tracking-tighter flex items-center justify-center gap-3 transition-all active:scale-95 ${isPaused ? 'bg-amber-500 text-amber-950 shadow-lg' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}>
-                                 {isPaused ? <Play size={24} /> : <Pause size={24} />}
-                                 {isPaused ? "Reanudar" : "Pausar"}
-                              </button>
-                              <button onClick={stopSharing} className="bg-red-500 hover:bg-red-400 text-white font-black py-6 rounded-[24px] text-lg uppercase tracking-tighter flex items-center justify-center gap-3 shadow-xl shadow-red-500/10 active:scale-95">
-                                 <StopCircle size={24} /> Detener
-                              </button>
-                           </>
-                        )}
-                        <button onClick={() => { stopSharing(); setMode("home"); }} className="bg-zinc-900 border-2 border-zinc-800 text-zinc-400 hover:text-white font-black py-6 rounded-[24px] text-lg uppercase tracking-tighter active:scale-95">
-                           Volver
-                        </button>
-                     </div>
-                  </div>
-
-                  {/* LISTA DERECHA: AUDIENCIA */}
-                  <div className="bg-zinc-900 border-4 border-zinc-800 rounded-[32px] flex flex-col h-[600px] overflow-hidden shadow-xl">
-                     <div className="p-5 border-b-2 border-zinc-800 flex justify-between items-center bg-zinc-800/20">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Espectadores ({participants.length})</span>
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                     </div>
-                     <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                         {/* Solicitudes de Acceso */}
-                         <AnimatePresence>
-                           {pendingRequests.map(req => (
-                              <motion.div 
-                                 key={req.id} 
-                                 initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }}
-                                 className="bg-emerald-500 p-4 rounded-2xl flex flex-col gap-3 shadow-lg shadow-emerald-500/10"
-                              >
-                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-zinc-950 rounded-lg flex items-center justify-center text-emerald-500 font-black">{req.name.charAt(0)}</div>
-                                    <div className="flex flex-col min-w-0">
-                                       <span className="text-xs font-black text-zinc-950 truncate">{req.name}</span>
-                                       <span className="text-[8px] font-black text-zinc-950/60 uppercase">Pide acceso</span>
-                                    </div>
-                                 </div>
-                                 <button onClick={() => approveAccess(req.id)} className="bg-zinc-950 text-emerald-500 font-black py-3 rounded-xl text-xs uppercase tracking-widest hover:bg-zinc-900 transition-all border border-zinc-800">Ceder Paso</button>
-                              </motion.div>
-                           ))}
-                         </AnimatePresence>
-                         
-                         {/* Usuarios Conectados */}
-                         {participants.filter(p => p.id !== myId).map(p => (
-                            <div key={p.id} className="bg-zinc-950 border-2 border-zinc-800 p-4 rounded-2xl flex items-center gap-3">
-                               <div className="w-10 h-10 bg-zinc-900 rounded-lg flex items-center justify-center text-emerald-500 font-bold border border-zinc-800">{p.name.charAt(0)}</div>
-                               <div className="flex flex-col flex-1 min-w-0">
-                                  <span className="text-xs font-black truncate">{p.name}</span>
-                                  <span className="text-[8px] font-bold text-zinc-600 uppercase">En el sistema</span>
-                               </div>
+                {/* Pending Requests for Broadcaster */}
+                {isSharing && pendingRequests.length > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-4 space-y-2 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl"
+                  >
+                    <h3 className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2">
+                      <UserPlus size={12} /> Solicitud ({pendingRequests.length})
+                    </h3>
+                    <div className="grid gap-2">
+                      {pendingRequests.map(req => (
+                        <div key={req.id} className="bg-zinc-950 border border-zinc-800 p-4 rounded-2xl flex items-center justify-between shadow-xl">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center text-zinc-950 font-bold">
+                              {req.name.charAt(0)}
                             </div>
-                         ))}
-                         
-                         {participants.filter(p => p.id !== myId).length === 0 && pendingRequests.length === 0 && (
-                            <div className="flex flex-col items-center justify-center py-20 opacity-20">
-                               <Users size={32} />
-                               <span className="text-[8px] font-black uppercase tracking-[0.3em] mt-2">Sala Vacía</span>
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold">{req.name}</span>
+                              <span className="text-[10px] text-zinc-500 font-mono">ID: {req.id.substring(0, 8)}</span>
                             </div>
-                         )}
-                     </div>
-                     
-                     <div className="p-4 bg-zinc-800/10 border-t-2 border-zinc-800 flex items-center justify-center gap-2">
-                        <ShieldCheck size={14} className="text-emerald-500/40" />
-                        <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest italic">Cifrado de Extremo a Extremo</span>
-                     </div>
-                  </div>
-               </div>
-            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => approveAccess(req.id)}
+                              className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 px-6 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-emerald-500/20"
+                            >
+                              Aprobar
+                            </button>
+                            <button 
+                              onClick={() => denyAccess(req.id)}
+                              className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors"
+                            >
+                              Denegar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+                    {/* Active Participants & Monitor */}
+                {isSharing && participants.length > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mt-8 flex flex-col md:flex-row gap-6"
+                  >
+                    <div className="flex-1 min-w-[30%] bg-zinc-950/50 border border-zinc-800 p-6 rounded-3xl">
+                      <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <Users size={14} /> Participantes ({participants.length})
+                      </h3>
+                      <div className="flex flex-col gap-3 max-h-64 overflow-y-auto pr-2">
+                        {participants.map(p => (
+                          <div key={p.id} className="flex items-center gap-3 bg-zinc-900/50 p-2 rounded-xl border border-zinc-800/50">
+                            <div className="w-8 h-8 bg-zinc-800 rounded-full flex items-center justify-center text-[10px] font-bold text-emerald-500">
+                              {p.name.charAt(0)}
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                                <span className="text-sm font-medium truncate">{p.name}</span>
+                                <span className="text-[9px] text-zinc-600 font-mono uppercase">En línea</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex-[2] bg-zinc-950/50 border border-zinc-800 p-4 rounded-3xl overflow-hidden shadow-inner">
+                       <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <Monitor size={14} /> Monitor de Salida (Lo que ven)
+                      </h3>
+                      <div className="aspect-video bg-black rounded-xl border border-zinc-800/50 overflow-hidden relative shadow-2xl">
+                         <video 
+                            autoPlay 
+                            playsInline 
+                            muted 
+                            className={`w-full h-full object-contain ${isPaused ? 'blur-md grayscale opacity-50' : ''}`}
+                            ref={(el) => {
+                                if (el && streamRef.current) el.srcObject = streamRef.current;
+                            }}
+                          />
+                          <div className="absolute top-2 right-2 bg-emerald-500/20 backdrop-blur-md px-2 py-1 rounded text-[10px] font-bold text-emerald-500 border border-emerald-500/30">
+                            LIVE
+                          </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+
+              <div className="bg-emerald-500/5 border border-emerald-500/10 p-2 px-4 rounded-xl flex justify-center items-center gap-2">
+                  <Info className="text-emerald-500" size={12} />
+                  <span className="text-[11px] text-zinc-400">Código: <b>{roomId}</b>. El receptor se conectará al entrar.</span>
+              </div>
+            </motion.div>
           )}
 
           {mode === "watch" && (
-            <div key="watch" className="animate-in fade-in duration-500">
-                {accessStatus !== "granted" ? (
-                 <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
-                    <div className="bg-zinc-900 border-4 border-zinc-800 p-6 md:p-8 rounded-[32px] w-full max-w-sm text-center shadow-2xl">
-                       <div className="w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-xl shadow-emerald-500/10">
-                          <Tv className="text-zinc-950 w-8 h-8" />
-                       </div>
-                       <h2 className="text-3xl font-black mb-1 uppercase tracking-tighter">Entrar a Sala</h2>
-                       <p className="text-zinc-500 font-bold text-[10px] uppercase tracking-widest mb-8">Ingresa el código del emisor</p>
-                       
-                       <div className="space-y-4">
-                         <input
-                           type="text"
-                           value={roomId}
-                           onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                           placeholder="CÓDIGO"
-                           disabled={accessStatus === "requesting"}
-                           className="bg-black border-4 border-zinc-800 focus:border-emerald-500 px-4 py-4 rounded-2xl font-mono text-4xl font-black text-emerald-500 focus:outline-none transition-all w-full text-center tracking-[0.2em] shadow-inner"
-                         />
-                         
-                         {accessStatus === "requesting" ? (
-                            <div className="bg-zinc-800 py-4 rounded-2xl text-zinc-400 font-black text-[10px] uppercase tracking-widest animate-pulse border-2 border-zinc-700">
-                               Esperando Aprobación...
-                            </div>
-                         ) : (
-                            <button onClick={requestAccess} className="w-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black py-4 rounded-2xl transition-all shadow-xl shadow-emerald-500/10 text-lg uppercase tracking-tighter active:scale-95">
-                               Conectar Ahora
-                            </button>
-                         )}
-                         
-                         {accessStatus === "denied" && (
-                            <p className="text-red-500 font-black bg-red-500/10 p-3 rounded-xl border-2 border-red-500/20 text-[9px] uppercase tracking-widest text-center">Acceso rechazado</p>
-                         )}
-                         <button onClick={() => setMode("home")} className="text-[9px] text-zinc-600 font-black uppercase tracking-widest hover:text-zinc-400">Volver al inicio</button>
-                       </div>
-                    </div>
-                 </div>
-               ) : (
-                 <div className={`flex flex-col ${isFullscreen ? '' : 'lg:flex-row'} gap-6 h-[calc(100vh-160px)]`}>
-                    <div className="flex-1 relative bg-black rounded-[40px] overflow-hidden border-4 border-zinc-800 group shadow-2xl">
-                       <video ref={remoteVideoRef} autoPlay playsInline className={`w-full h-full object-contain ${isPaused ? 'opacity-20 grayscale' : ''}`} />
-                       
-                       {isPaused && (
-                         <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/40">
-                            <div className="bg-amber-500 text-amber-950 px-8 py-4 rounded-2xl font-black uppercase tracking-widest animate-pulse">Reproducción en Pausa</div>
-                         </div>
-                       )}
-
-                       {/* Barra de Controles para Receptor */}
-                       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-zinc-950 border-2 border-zinc-800 px-6 py-3 rounded-full opacity-0 group-hover:opacity-100 transition-all z-20">
-                          <button onClick={reSync} className="p-3 bg-emerald-500/20 text-emerald-500 rounded-xl hover:bg-emerald-500/30" title="Sincronizar">
-                              <RefreshCw size={20} />
-                          </button>
-                          <button onClick={() => setIsMuted(!isMuted)} className="p-3 text-white hover:bg-zinc-800 rounded-xl" title="Audio">
-                             {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
-                          </button>
-                          <button onClick={toggleFullscreen} className="p-3 text-white hover:bg-zinc-800 rounded-xl" title="Pantalla Completa">
-                             {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
-                          </button>
-                          <button onClick={() => { stopSharing(); setMode("home"); }} className="p-3 bg-red-500/20 text-red-500 rounded-xl hover:bg-red-500/30" title="Cerrar">
-                              <LogOut size={20} />
-                          </button>
-                       </div>
-                    </div>
-
-                    {!isFullscreen && (
-                      <div className="w-full lg:w-40 flex flex-col gap-4">
-                          <div className="bg-zinc-900 border-4 border-zinc-800 p-4 rounded-[32px] flex flex-col items-center gap-4">
-                             <span className="text-[8px] font-black uppercase tracking-widest text-zinc-600">En la sala</span>
-                             <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-zinc-950 font-black shadow-lg shadow-emerald-500/10 border-2 border-emerald-400" title="Tú">
-                                 TÚ
-                             </div>
-                             {participants.filter(p => p.id !== myId).map(p => (
-                                <div key={p.id} className="w-12 h-12 bg-zinc-950 border-2 border-zinc-800 rounded-2xl flex items-center justify-center text-zinc-500 font-black shadow-inner" title={p.name}>
-                                   {p.name?.charAt(0) || "U"}
-                                </div>
-                             ))}
-                          </div>
+            <motion.div
+              key="watch"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col gap-2"
+            >
+              <div className="bg-zinc-900 border border-zinc-800 p-4 rounded-3xl">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+                  <div className="flex-1">
+                    <h2 className="text-xl font-bold">Receptor</h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={roomId}
+                      onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+                      placeholder="CÓDIGO"
+                      disabled={accessStatus === "requesting"}
+                      className="bg-zinc-950 border border-zinc-800 px-4 py-2 rounded-xl font-mono text-lg font-bold text-emerald-500 focus:outline-none focus:border-emerald-500 transition-colors w-32 text-center tracking-widest disabled:opacity-50"
+                    />
+                    {accessStatus === "idle" || accessStatus === "denied" ? (
+                      <button
+                        onClick={requestAccess}
+                        className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold py-2.5 px-5 rounded-xl transition-all flex items-center gap-2 text-sm"
+                      >
+                        Unirse
+                      </button>
+                    ) : accessStatus === "requesting" ? (
+                      <div className="flex items-center gap-2 bg-zinc-800 px-4 py-2 rounded-xl text-zinc-400 animate-pulse text-xs">
+                        <ShieldCheck size={16} /> Solicitando...
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 bg-emerald-500/20 text-emerald-500 px-4 py-2.5 rounded-xl font-bold border border-emerald-500/30 text-xs">
+                        <ShieldCheck size={16} /> Acceso Permitido
                       </div>
                     )}
-                 </div>
-               )}
-            </div>
+                  </div>
+                </div>
+
+                <div 
+                  ref={videoContainerRef}
+                  className={`relative group shadow-2xl overflow-hidden bg-black ${isFullscreen ? 'w-screen h-screen' : 'aspect-video max-h-[60vh] rounded-2xl border border-zinc-800'}`}
+                >
+                  <video 
+                    ref={remoteVideoRef} 
+                    playsInline 
+                    {...({ "webkit-playsinline": "true" } as any)}
+                    muted={isMuted}
+                    className={`block w-full h-full object-contain bg-black ${isPaused ? 'opacity-30' : 'opacity-100'}`}
+                  />
+                  
+                  <AnimatePresence>
+                    {isPaused && (
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center p-8 bg-zinc-950/40 backdrop-blur-sm"
+                      >
+                        <motion.div 
+                          initial={{ scale: 0.8 }}
+                          animate={{ scale: 1 }}
+                          className="w-24 h-24 bg-amber-500/20 rounded-full flex items-center justify-center mb-8 border border-amber-500/30"
+                        >
+                          <Pause className="text-amber-500 w-12 h-12 animate-pulse" />
+                        </motion.div>
+                        <h3 className="text-3xl font-black text-white mb-4 tracking-tight">Transmisión en espera</h3>
+                        <p className="text-zinc-300 max-w-sm leading-relaxed text-lg">
+                          El emisor ha pausado la vista momentáneamente. No te desconectes, la señal regresará pronto.
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  
+                  {/* Controls Overlay */}
+                  <div className={`absolute inset-0 flex flex-col justify-between p-4 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 hover:opacity-100' : 'opacity-100'}`}>
+                      <div className="flex justify-between items-start">
+                        <div className="flex flex-col gap-2">
+                          <div className="bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${status.includes("Conectado") ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`} />
+                            {status}
+                          </div>
+                          {hasAudio && (
+                            <div className="bg-emerald-500/20 backdrop-blur-md px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-500 flex items-center gap-1.5 border border-emerald-500/30">
+                              <Volume2 size={12} /> AUDIO DISPONIBLE
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          {hasAudio && (
+                            <button
+                              onClick={() => setIsMuted(!isMuted)}
+                              className="bg-black/60 backdrop-blur-md p-2 rounded-lg text-white hover:bg-emerald-500 transition-colors"
+                              title={isMuted ? "Activar sonido" : "Silenciar"}
+                            >
+                              {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                            </button>
+                          )}
+                          <button
+                            onClick={toggleFullscreen}
+                            className="bg-black/60 backdrop-blur-md p-2 rounded-lg text-white hover:bg-emerald-500 transition-colors"
+                            title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+                          >
+                            {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+                          </button>
+                        </div>
+                      </div>
+
+                    {!status.includes("Conectado") && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-600 pointer-events-none bg-zinc-950/80 backdrop-blur-sm">
+                        <Tv size={48} className="mb-4 opacity-20" />
+                        <p className="text-sm font-medium px-6 text-center">
+                          {status === "Transmisión finalizada por el emisor" || status === "Conexión perdida" 
+                            ? status 
+                            : "Esperando transmisión..."}
+                        </p>
+                        {(status === "Transmisión finalizada por el emisor" || status === "Conexión perdida") && (
+                          <button 
+                            onClick={() => setMode("home")}
+                            className="mt-6 pointer-events-auto bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded-xl text-xs font-bold transition-all"
+                          >
+                            Volver al inicio
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Floating Re-enable Fullscreen button (only if not in fullscreen and connected) */}
+                  {!isFullscreen && status.includes("Conectado") && (
+                    <button
+                      onClick={toggleFullscreen}
+                      className="absolute bottom-4 right-4 bg-emerald-500 text-zinc-950 p-3 rounded-full shadow-lg animate-bounce"
+                      title="Poner en pantalla completa"
+                    >
+                      <Maximize size={24} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-2 flex gap-3">
+                  <button
+                    onClick={() => {
+                       if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+                          const s = remoteVideoRef.current.srcObject;
+                          remoteVideoRef.current.srcObject = null;
+                          setTimeout(() => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = s; }, 100);
+                       }
+                       requestAccess();
+                    }}
+                    className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 font-bold py-2 px-4 rounded-xl transition-all text-[10px]"
+                  >
+                    Actualizar Señal
+                  </button>
+                  <button
+                    onClick={() => { stopSharing(); setMode("home"); }}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2 px-4 rounded-xl transition-all text-[11px]"
+                  >
+                    Volver al Inicio
+                  </button>
+                </div>
+              </div>
+            </motion.div>
           )}
+        </AnimatePresence>
       </main>
 
       {/* Footer */}
-      <footer className="p-12 text-center text-zinc-600 text-sm">
+      <footer className="p-4 text-center text-zinc-600 text-[10px]">
         <p>© nextappcode • Todos los derechos reservados</p>
       </footer>
     </div>
