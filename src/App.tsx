@@ -38,49 +38,44 @@ export default function App() {
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    // Aggressively suppress expected Vite HMR errors and browser extension noise
-    const isSuppressed = (msg: string, source?: string) => {
-      const combined = (msg + (source || "")).toLowerCase();
-      return combined.includes("websocket closed") || 
-             combined.includes("failed to connect") ||
-             combined.includes("browsing topics") ||
-             combined.includes("nodestructure.js") ||
-             combined.includes("getrangeat") ||
-             combined.includes("indexsizeerror") ||
-             combined.includes("receiving end does not exist");
-    };
-
+    // Keep a cleaner console for remaining app-level noise
     const handleRejection = (event: PromiseRejectionEvent) => {
-      if (isSuppressed(String(event.reason))) {
+      const msg = String(event.reason || "").toLowerCase();
+      if (msg.includes("websocket") || msg.includes("receiving end")) {
         event.preventDefault();
         event.stopPropagation();
       }
     };
-
-    const handleError = (msg: any, url?: string) => {
-      if (isSuppressed(String(msg), url)) {
-        return true; // Prevents the firing of the default event handler
-      }
-      return false;
-    };
-
-    // Override console.error for these specific strings
-    const originalError = console.error;
-    console.error = (...args) => {
-      const msg = args.map(String).join(" ");
-      if (isSuppressed(msg)) return;
-      originalError.apply(console, args);
-    };
-
     window.addEventListener("unhandledrejection", handleRejection);
-    window.onerror = handleError;
-    
-    return () => {
-      window.removeEventListener("unhandledrejection", handleRejection);
-      window.onerror = null;
-      console.error = originalError;
-    };
+    return () => window.removeEventListener("unhandledrejection", handleRejection);
   }, []);
+
+  // Monitoring for frozen video on TV
+  useEffect(() => {
+    let checkInterval: number;
+    if (mode === "watch" && remoteVideoRef.current) {
+      let lastTime = 0;
+      let freezeCount = 0;
+      
+      checkInterval = window.setInterval(() => {
+        const video = remoteVideoRef.current;
+        if (!video || video.paused || video.ended || video.readyState < 2) return;
+        
+        if (video.currentTime === lastTime && status.includes("Conectado")) {
+           freezeCount++;
+           if (freezeCount > 6) { // ~3 seconds frozen
+             console.log("[mira] Detectada imagen estática, re-activando...");
+             video.play().catch(() => {});
+             freezeCount = 0;
+           }
+        } else {
+          freezeCount = 0;
+        }
+        lastTime = video.currentTime;
+      }, 500);
+    }
+    return () => clearInterval(checkInterval);
+  }, [mode, status]);
 
   useEffect(() => {
     let reconnectTimeout: number;
@@ -293,18 +288,25 @@ export default function App() {
      };
 
     pc.ontrack = (event) => {
-      console.log("¡Pista de vídeo recibida! Mostrando en pantalla...");
+      console.log("¡Canal de vídeo detectado! Iniciando pantalla...");
       if (remoteVideoRef.current) {
+        // Force refresh srcObject to ensure the decoder starts fresh
+        remoteVideoRef.current.srcObject = null;
         remoteVideoRef.current.srcObject = event.streams[0];
         
-        // Auto-play forces
-        remoteVideoRef.current.play().catch(e => console.warn("Autoplay block", e));
+        // Use a loop or repeated play() to overcome some TV autoplay restrictions
+        const attemptPlay = () => {
+          if (!remoteVideoRef.current) return;
+          remoteVideoRef.current.play().catch(e => {
+            console.warn("Reintentando reproducción...", e.message);
+            setTimeout(attemptPlay, 1000);
+          });
+        };
+        attemptPlay();
         
         // Auto-fullscreen logic
         if (mode === "watch" && !document.fullscreenElement && videoContainerRef.current) {
-          videoContainerRef.current.requestFullscreen().catch(err => {
-            console.warn("No se pudo activar pantalla completa automáticamente:", err.message);
-          });
+          videoContainerRef.current.requestFullscreen().catch(() => {});
         }
 
         const audioTracks = event.streams[0].getAudioTracks();
@@ -331,10 +333,9 @@ export default function App() {
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { 
-          cursor: "always",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 }
+          width: { ideal: 1280 }, // 720p is much more stable for TV decoders
+          height: { ideal: 720 },
+          frameRate: { ideal: 25 }
         } as any,
         audio: true
       });
@@ -379,17 +380,16 @@ export default function App() {
         const videoTrack = streamRef.current.getVideoTracks()[0];
         const audioTrack = streamRef.current.getAudioTracks()[0];
 
+        // Use straightforward track adding for max compatibility
         if (audioTrack) pc.addTrack(audioTrack, streamRef.current);
-        
-        // Add video with simulcast encodings
-        pc.addTransceiver(videoTrack, {
-          streams: [streamRef.current],
-          sendEncodings: [
-            { rid: "high", maxBitrate: 2500000, maxFramerate: 30 }, // 1080p
-            { rid: "mid", maxBitrate: 1000000, scaleResolutionDownBy: 2.0, maxFramerate: 30 }, // 540p
-            { rid: "low", maxBitrate: 300000, scaleResolutionDownBy: 4.0, maxFramerate: 15 } // 270p
-          ]
-        });
+        if (videoTrack) {
+          pc.addTransceiver(videoTrack, {
+            streams: [streamRef.current],
+            sendEncodings: [
+              { maxBitrate: 1800000, maxFramerate: 25 } // Single stable stream
+            ]
+          });
+        }
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -480,6 +480,19 @@ export default function App() {
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
+
+  const reSync = () => {
+    if (remoteVideoRef.current) {
+      console.log("[mira] Re-sincronización manual solicitada");
+      remoteVideoRef.current.play().catch(() => {});
+      // Small trick: toggle mute briefly to wake up some audio/video decoders
+      const wasMuted = isMuted;
+      setIsMuted(true);
+      setTimeout(() => setIsMuted(wasMuted), 200);
+      setStatus("Sincronizando imagen...");
+      setTimeout(() => setStatus("Conectado (Recibiendo)"), 2000);
+    }
+  };
 
   return (
     <div 
@@ -840,17 +853,25 @@ export default function App() {
                         </div>
                         
                         <div style={{ display: "flex", gap: "8px" }}>
+                          {status.includes("Conectado") && (
+                            <button
+                              onClick={reSync}
+                              style={{ background: "rgba(16, 185, 129, 0.4)", color: "#fff", padding: "8px 16px", borderRadius: "8px", border: "1px solid #10b981", cursor: "pointer", fontWeight: "bold", fontSize: "12px", pointerEvents: "auto" }}
+                            >
+                              RE-SINCRONIZAR
+                            </button>
+                          )}
                           {hasAudio && (
                             <button
                               onClick={() => setIsMuted(!isMuted)}
-                              style={{ background: "rgba(0,0,0,0.6)", color: "#fff", padding: "8px", borderRadius: "8px", border: "none", cursor: "pointer" }}
+                              style={{ background: "rgba(0,0,0,0.6)", color: "#fff", padding: "8px", borderRadius: "8px", border: "none", cursor: "pointer", pointerEvents: "auto" }}
                             >
                               {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
                             </button>
                           )}
                           <button
                             onClick={toggleFullscreen}
-                            style={{ background: "rgba(0,0,0,0.6)", color: "#fff", padding: "8px", borderRadius: "8px", border: "none", cursor: "pointer" }}
+                            style={{ background: "rgba(0,0,0,0.6)", color: "#fff", padding: "8px", borderRadius: "8px", border: "none", cursor: "pointer", pointerEvents: "auto" }}
                           >
                             {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
                           </button>

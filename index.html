@@ -4,6 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>mira</title>
+    <script>
+      // Silence noisy browser extensions and Chrome privacy warnings immediately
+      (function() {
+        const suppressed = [
+          'nodestructure.js', 'getrangeat', 'indexsizeerror', 
+          'browsing topics', 'receiving end does not exist',
+          'lastError', 'websocket closed'
+        ];
+        const isSuppressed = (m) => suppressed.some(s => String(m).toLowerCase().includes(s));
+        
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        console.error = function(...args) {
+          if (isSuppressed(args.join(' '))) return;
+          originalError.apply(console, args);
+        };
+        console.warn = function(...args) {
+          if (isSuppressed(args.join(' '))) return;
+          originalWarn.apply(console, args);
+        };
+        
+        window.onerror = function(msg, url) {
+          if (isSuppressed(msg) || isSuppressed(url)) return true;
+        };
+        window.addEventListener('unhandledrejection', function(e) {
+          if (isSuppressed(e.reason)) { e.preventDefault(); e.stopPropagation(); }
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
