@@ -137,6 +137,20 @@ async function startServer() {
               });
             }
             break;
+
+          case "pause-state":
+            if (currentRoom && rooms.has(currentRoom)) {
+              rooms.get(currentRoom)?.forEach((client, id) => {
+                if (id !== socketId && client.readyState === WebSocket.OPEN) {
+                  client.send(JSON.stringify({
+                    type: "pause-state",
+                    paused: message.paused,
+                    sender: socketId
+                  }));
+                }
+              });
+            }
+            break;
         }
       } catch (err) {
         console.error("Error handling message:", err);

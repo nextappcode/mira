@@ -868,7 +868,8 @@ export default function App() {
                     autoPlay 
                     playsInline 
                     muted={isMuted}
-                    style={{ width: "100%", height: "100%", objectFit: "contain", background: "#09090b" }}
+                    style={{ width: "100%", height: "100%", objectFit: "contain", background: "#09090b", transition: "all 0.5s ease" }}
+                    className={isPaused ? "blur-md grayscale opacity-50" : ""}
                   />
                   
                   {isPaused && (
