@@ -34,6 +34,7 @@ export default function App() {
   const [accessStatus, setAccessStatus] = useState<"idle" | "requesting" | "granted" | "denied">("idle");
   const [isConnected, setIsConnected] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [hasValidFrames, setHasValidFrames] = useState(false);
   const isPausedRef = useRef(false);
   
   const updatePauseState = (paused: boolean) => {
@@ -146,6 +147,19 @@ export default function App() {
             console.log("Recibido cambio de estado de pausa:", message.paused);
             setIsPaused(message.paused);
             isPausedRef.current = message.paused;
+          } else if (message.type === "request-offer") {
+            // A viewer explicitly asked for a re-negotiation (e.g., pressed 'Refresh Signal')
+            if (isSharingRef.current && streamRef.current) {
+               console.log("Renegociando conexión para el usuario:", message.userId);
+               const pc = createPeerConnection(message.userId);
+               streamRef.current.getTracks().forEach(track => {
+                  if (streamRef.current) pc.addTrack(track, streamRef.current);
+               });
+               pc.createOffer().then(offer => {
+                 pc.setLocalDescription(offer);
+                 sendSignal(offer, message.userId, true);
+               }).catch(e => console.error(e));
+            }
           }
         } catch (err) {
           // Silently handle JSON parse errors
@@ -227,12 +241,13 @@ export default function App() {
     }
   };
 
-  const sendSignal = (data: any, targetId?: string) => {
+  const sendSignal = (data: any, targetId?: string, isRenegotiation = false) => {
     safeSend({
       type: "signal",
       room: roomId,
       data: data,
-      targetId: targetId
+      targetId: targetId,
+      renegotiate: isRenegotiation
     });
   };
 
@@ -270,25 +285,47 @@ export default function App() {
 
       console.log("¡Nueva señal de video recibida! ID:", stream.id, ". Vinculando...");
       
-      if ('srcObject' in videoEl) {
-         videoEl.srcObject = stream;
-      } else {
-         (videoEl as any).src = window.URL.createObjectURL(stream as any);
+      let assigned = false;
+      const isAncient = /Chrome\/[34][0-9]\./.test(navigator.userAgent) || /Android [45]/.test(navigator.userAgent);
+      
+      if ('srcObject' in videoEl && !isAncient) {
+         try {
+            videoEl.srcObject = stream;
+            assigned = true;
+         } catch(e) {
+            console.warn("Fallo srcObject, usando fallback local...");
+         }
+      }
+      
+      if (!assigned) {
+         try {
+            const vendorURL = window.URL || (window as any).webkitURL;
+            if (vendorURL && vendorURL.createObjectURL) {
+               console.log("Forzando fallback createObjectURL (Navegador antiguo detectado)");
+               (videoEl as any).src = vendorURL.createObjectURL(stream as any);
+            }
+         } catch(err) {
+            console.error("Error al crear URL del stream:", err);
+         }
       }
       
       videoEl.muted = isMuted;
 
       const attemptPlay = () => {
+        if (!videoEl || !videoEl.paused) return; // Prevent aborting a successful play
         console.log("Intentando reproducir video...");
-        videoEl.play().catch(e => {
-          console.warn("Autoplay block o error hardware:", e.name, e.message);
-          // Retry logic
-          if (e.name !== 'AbortError') {
-             setTimeout(() => {
-                if (videoEl.paused) videoEl.play().catch(() => {});
-             }, 1000);
-          }
-        });
+        try {
+           const p = videoEl.play();
+           if (p && typeof p.catch === 'function') {
+              p.catch(e => {
+                if (e?.name !== 'AbortError') {
+                   setTimeout(() => { if (videoEl && videoEl.paused) videoEl.play().catch(() => {}) }, 2000);
+                }
+              });
+           }
+        } catch (syncError) {
+           setTimeout(() => { if (videoEl && videoEl.paused) videoEl.play() }, 1500);
+        }
       };
 
       // In TVs, sometimes onloadedmetadata is unreliable. Try immediately AND on event.
@@ -301,10 +338,14 @@ export default function App() {
       // Backup attempt just in case loadedmetadata doesn't fire immediately
       setTimeout(attemptPlay, 1000);
 
+      // Request fullscreen after a short delay to accommodate TV navigation buffers
       if (mode === "watch" && !document.fullscreenElement && videoContainerRef.current) {
-        const el = videoContainerRef.current;
-        const requestFS = el.requestFullscreen || (el as any).webkitRequestFullscreen || (el as any).mozRequestFullScreen || (el as any).msRequestFullscreen;
-        if (requestFS) requestFS.call(el).catch(() => {});
+        setTimeout(() => {
+          const el = videoContainerRef.current;
+          if (!el) return;
+          const requestFS = el.requestFullscreen || (el as any).webkitRequestFullscreen || (el as any).mozRequestFullScreen || (el as any).msRequestFullscreen;
+          if (requestFS) requestFS.call(el).catch(() => {});
+        }, 1500);
       }
 
       const audioTracks = stream.getAudioTracks();
@@ -312,11 +353,16 @@ export default function App() {
     };
 
     pc.ontrack = (event) => {
+      console.log("Evento ontrack detectado!");
       if (event.streams && event.streams[0]) {
         handleStream(event.streams[0]);
       }
     };
-    (pc as any).onaddstream = (event: any) => handleStream(event.stream);
+    // Legacy support for older browsers like Chrome 30-49 (Android 4.4 TV)
+    (pc as any).onaddstream = (event: any) => {
+        console.log("Evento onaddstream detectado! (Legacy API)");
+        if (event.stream) handleStream(event.stream);
+    };
 
     peerConnections.current.set(targetId, pc);
     return pc;
@@ -332,9 +378,10 @@ export default function App() {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { 
           cursor: "always",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 }
+          // Constraint to prevent ancient TV decoders from crashing with 1080p+ streams
+          width: { max: 1280, ideal: 1280 },
+          height: { max: 720, ideal: 720 },
+          frameRate: { max: 30, ideal: 24 }
         } as any,
         audio: true
       });
@@ -358,32 +405,52 @@ export default function App() {
     }
   };
 
-   const approveAccess = async (userId: string) => {
-     try {
-       const request = pendingRequests.find(r => r.id === userId);
-       setPendingRequests(prev => prev.filter(req => req.id !== userId));
-       if (request) {
+  const approveAccess = async (userId: string) => {
+    try {
+      const request = pendingRequests.find(r => r.id === userId);
+      setPendingRequests(prev => prev.filter(req => req.id !== userId));
+      if (request) {
          setParticipants(prev => {
             if (prev.find(p => p.id === userId)) return prev;
             return [...prev, request];
          });
-       }
-       
-       // Send approval
-      safeSend({ type: "access-response", targetId: userId, granted: true });
-      
-      // Prepare WebRTC for this specific user
-      if (streamRef.current) {
-        const pc = createPeerConnection(userId);
-        
-        // Simple track addition for maximum compatibility with old TVs
-        streamRef.current.getTracks().forEach(track => {
-           if (streamRef.current) pc.addTrack(track, streamRef.current);
-        });
+      }
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendSignal(offer, userId);
+      setAccessStatus(prev => "granted");
+      safeSend({ type: "access-response", targetId: userId, granted: true });
+
+      const pc = createPeerConnection(userId);
+      
+      if (streamRef.current) {
+         streamRef.current.getTracks().forEach(track => {
+            if (streamRef.current) {
+               const sender = pc.addTrack(track, streamRef.current);
+               // STOPSHIP: Force H264 Codec. Ancient TVs usually fail silently on VP8/VP9 hardware decoders.
+               if (track.kind === 'video' && pc.getTransceivers && window.RTCRtpReceiver && (window.RTCRtpReceiver as any).getCapabilities) {
+                   const caps = (window.RTCRtpReceiver as any).getCapabilities('video');
+                   if (caps && caps.codecs) {
+                       const h264Codecs = caps.codecs.filter((c: any) => c.mimeType.toLowerCase() === 'video/h264');
+                       const otherCodecs = caps.codecs.filter((c: any) => c.mimeType.toLowerCase() !== 'video/h264');
+                       if (h264Codecs.length > 0) {
+                           const transceivers = pc.getTransceivers();
+                           const videoTransceiver = transceivers.find(t => t.sender === sender);
+                           if (videoTransceiver && videoTransceiver.setCodecPreferences) {
+                               try {
+                                   videoTransceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
+                                   console.log("Forzado hardware de video a H264 para mayor compatibilidad con TVs.");
+                               } catch (e) {
+                                   console.warn("Falló el forzado a H264:", e);
+                               }
+                           }
+                       }
+                   }
+               }
+            }
+         });
+
+         const offer = await pc.createOffer();
+         await pc.setLocalDescription(offer);
+         sendSignal(offer, userId);
       }
     } catch (err) {
       console.error("Error approving access:", err);
@@ -403,6 +470,7 @@ export default function App() {
      peerConnections.current.clear();
      setIsSharing(false);
      setIsPaused(false);
+     setHasValidFrames(false);
      setParticipants([]);
      setStatus("Compartición finalizada");
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
@@ -804,10 +872,18 @@ export default function App() {
                 >
                   <video 
                     ref={remoteVideoRef} 
+                    autoPlay
                     playsInline 
                     {...({ "webkit-playsinline": "true" } as any)}
                     muted={isMuted}
-                    className={`block w-full h-full object-contain bg-black ${isPaused ? 'opacity-30' : 'opacity-100'}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    className={`block bg-black ${isPaused ? 'opacity-30' : 'opacity-100'}`}
+                    onTimeUpdate={(e) => {
+                       if (e.currentTarget.currentTime > 0.1 && !hasValidFrames) {
+                          console.log("¡Frames reales verificados en pantalla!");
+                          setHasValidFrames(true);
+                       }
+                    }}
                   />
                   
                   <AnimatePresence>
@@ -827,9 +903,38 @@ export default function App() {
                         </motion.div>
                         <h3 className="text-3xl font-black text-white mb-4 tracking-tight">Transmisión en espera</h3>
                         <p className="text-zinc-300 max-w-sm leading-relaxed text-lg">
-                          El emisor ha pausado la vista momentáneamente. No te desconectes, la señal regresará pronto.
+                          El emisor ha pausado la vista momentáneamente.
                         </p>
                       </motion.div>
+                    )}
+
+                    {/* Failsafe Play Button: Si el TV bloquea el autoplay por falta de interacción o no avanzan los frames */}
+                    {status.includes("Conectado") && !hasValidFrames && !isPaused && (
+                       <motion.div 
+                         initial={{ opacity: 0 }}
+                         animate={{ opacity: 1 }}
+                         transition={{ delay: 1 }}
+                         className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm"
+                       >
+                         <button
+                           onClick={() => {
+                              if (remoteVideoRef.current) {
+                                  remoteVideoRef.current.play().catch(e => console.error(e));
+                                  // Hack to kickstart ancient decoders:
+                                  remoteVideoRef.current.currentTime = 0;
+                              }
+                           }}
+                           className="w-32 h-32 bg-emerald-500 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.5)] hover:scale-105 transition-transform animate-pulse"
+                         >
+                            <Play className="text-zinc-950 w-16 h-16 ml-2" />
+                         </button>
+                         <p className="text-emerald-500 font-bold mt-8 text-xl tracking-widest uppercase">
+                            Toca para Ver
+                         </p>
+                         <p className="text-zinc-400 mt-2 text-sm text-center max-w-xs">
+                            Tu dispositivo pausó la transmisión automáticamente.
+                         </p>
+                       </motion.div>
                     )}
                   </AnimatePresence>
                   
@@ -868,13 +973,15 @@ export default function App() {
                         </div>
                       </div>
 
-                    {!status.includes("Conectado") && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-600 pointer-events-none bg-zinc-950/80 backdrop-blur-sm">
+                    {(accessStatus !== "granted" && !status.includes("Conectado")) && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-600 pointer-events-none bg-zinc-950/80 backdrop-blur-sm z-20">
                         <Tv size={48} className="mb-4 opacity-20" />
                         <p className="text-sm font-medium px-6 text-center">
                           {status === "Transmisión finalizada por el emisor" || status === "Conexión perdida" 
                             ? status 
-                            : "Esperando transmisión..."}
+                            : accessStatus === "requesting" 
+                               ? "Esperando respuesta del emisor..." 
+                               : "Esperando transmisión..."}
                         </p>
                         {(status === "Transmisión finalizada por el emisor" || status === "Conexión perdida") && (
                           <button 
@@ -903,12 +1010,13 @@ export default function App() {
                 <div className="mt-2 flex gap-3">
                   <button
                     onClick={() => {
-                       if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
-                          const s = remoteVideoRef.current.srcObject;
+                       // Request the broadcaster to send a brand new offer and refresh local video node
+                       if (remoteVideoRef.current) {
                           remoteVideoRef.current.srcObject = null;
-                          setTimeout(() => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = s; }, 100);
+                         (remoteVideoRef.current as any).__lastStreamId = null;
                        }
-                       requestAccess();
+                       safeSend({ type: "request-offer", room: roomId, userId: myId });
+                       setStatus("Actualizando señal...");
                     }}
                     className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 font-bold py-2 px-4 rounded-xl transition-all text-[10px]"
                   >
