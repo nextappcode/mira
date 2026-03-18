@@ -25,23 +25,6 @@ async function startServer() {
 
   // Room management: RoomID -> Map<SocketID, WebSocket>
   const rooms = new Map<string, Map<string, WebSocket>>();
-  // RoomID -> Map<SocketID, string>
-  const userNames = new Map<string, Map<string, string>>();
-
-  const broadcastUserList = (roomId: string) => {
-    const sockets = rooms.get(roomId);
-    const names = userNames.get(roomId);
-    if (!sockets || !names) return;
-
-    const list = Array.from(names.entries()).map(([id, name]) => ({ id, name }));
-    const message = JSON.stringify({ type: "user-list", participants: list });
-
-    sockets.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(message);
-      }
-    });
-  };
 
   server.on("upgrade", (request, socket, head) => {
     const url = request.url || "";
@@ -72,29 +55,24 @@ async function startServer() {
 
         switch (message.type) {
           case "join":
-            console.log(`[WS] User ${socketId} joining room: ${message.room} as ${message.name || "Unknown"}`);
             currentRoom = message.room;
             if (!rooms.has(currentRoom!)) {
               rooms.set(currentRoom!, new Map());
-              userNames.set(currentRoom!, new Map());
-              console.log(`[WS] Created new room: ${currentRoom}`);
             }
             rooms.get(currentRoom!)?.set(socketId, ws);
-            userNames.get(currentRoom!)?.set(socketId, message.name || "Usuario");
-            console.log(`[WS] Room ${currentRoom} now has ${rooms.get(currentRoom!)?.size} participants`);
             
-            // Broadcast the entire list to everyone
-            broadcastUserList(currentRoom!);
+            // Notify others in the room
+            rooms.get(currentRoom!)?.forEach((client, id) => {
+              if (id !== socketId && client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({ type: "user-joined", userId: socketId }));
+              }
+            });
             break;
 
           case "request-access":
-            console.log(`[WS] User ${socketId} requesting access in room: ${currentRoom}`);
             if (currentRoom && rooms.has(currentRoom)) {
-              const participants = rooms.get(currentRoom);
-              console.log(`[WS] Broadcasting request to ${participants!.size - 1} other participants`);
-              participants?.forEach((client, id) => {
+              rooms.get(currentRoom)?.forEach((client, id) => {
                 if (id !== socketId && client.readyState === WebSocket.OPEN) {
-                  console.log(`[WS] Sending request-access to ${id}`);
                   client.send(JSON.stringify({ 
                     type: "request-access", 
                     userId: socketId,
@@ -102,8 +80,6 @@ async function startServer() {
                   }));
                 }
               });
-            } else {
-              console.log(`[WS] request-access FAILED: Room ${currentRoom} not found or empty`);
             }
             break;
 
@@ -112,8 +88,8 @@ async function startServer() {
             if (targetClient && targetClient.readyState === WebSocket.OPEN) {
               targetClient.send(JSON.stringify({ 
                 type: "access-response", 
-                broadcasterId: socketId,
-                granted: message.granted
+                granted: message.granted,
+                broadcasterId: socketId
               }));
             }
             break;
@@ -147,20 +123,6 @@ async function startServer() {
               rooms.get(currentRoom)?.forEach((client) => {
                 if (client.readyState === WebSocket.OPEN) {
                   client.send(JSON.stringify({ type: "leave", userId: socketId }));
-                }
-              });
-            }
-            break;
-
-          case "pause-state":
-            if (currentRoom && rooms.has(currentRoom)) {
-              rooms.get(currentRoom)?.forEach((client, id) => {
-                if (id !== socketId && client.readyState === WebSocket.OPEN) {
-                  client.send(JSON.stringify({
-                    type: "pause-state",
-                    paused: message.paused,
-                    sender: socketId
-                  }));
                 }
               });
             }
@@ -203,20 +165,14 @@ async function startServer() {
     const distPath = path.resolve(__dirname, "dist");
     console.log(`[Server] Starting in PRODUCTION mode (Directory: ${distPath})`);
     
-    // Privacy and feature policy headers to quiet browser console warnings
-    app.use((req, res, next) => {
-      res.setHeader("Permissions-Policy", "browsing-topics=()");
-      next();
-    });
-
     // Diagnostic: List files in dist to help troubleshoot missing assets
     if (fs.existsSync(distPath)) {
       try {
         const files = fs.readdirSync(distPath);
-        console.log(`[Server] Files in dist root: ${files.join(", ")}`);
+        console.log(`[Server] Files in dist: ${files.join(", ")}`);
         if (files.includes("assets")) {
           const assets = fs.readdirSync(path.join(distPath, "assets"));
-          console.log(`[Server] Assets directory has ${assets.length} files`);
+          console.log(`[Server] Files in dist/assets: ${assets.join(", ")}`);
         }
       } catch (e) {
         console.warn("[Server] Could not list dist files", e);
@@ -233,18 +189,14 @@ async function startServer() {
     }));
 
     // Specific handler for assets to avoid MIME errors (don't serve index.html for missing assets)
-    // Helps identify which asset failed to load
-    app.get(["/assets/*", "**/*.css", "**/*.js", "**/*.png", "**/*.jpg", "**/*.svg"], (req, res) => {
-      console.warn(`[404] Resource not found: ${req.url}`);
-      res.status(404).send(`Resource not found: ${req.url}`);
+    app.get(["/assets/*", "*.css", "*.js", "*.png", "*.jpg", "*.svg"], (req, res) => {
+      res.status(404).send("Asset not found");
     });
 
-    // Root and SPA catch-all with no-cache for index.html
-    // This ensures users always get the latest asset hashes
+    // Root and SPA catch-all
     app.get("*", (req, res) => {
       const indexFile = path.join(distPath, "index.html");
       if (fs.existsSync(indexFile)) {
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         res.sendFile(indexFile);
       } else {
         res.status(404).send("Application files not found. Ensure 'npm run build' was executed.");
