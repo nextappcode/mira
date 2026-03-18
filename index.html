@@ -2,20 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>mira</title>
     <script>
-      // Silence noisy browser extensions and Chrome privacy warnings immediately
+      // SUPPRESS ERROR NOISE IMMEDIATELY (V1.1)
       (function() {
         const suppressed = [
           'nodestructure.js', 'getrangeat', 'indexsizeerror', 
           'browsing topics', 'receiving end does not exist',
-          'lastError', 'websocket closed'
+          'lasterror', 'websocket closed', 'hmr', 'heartbeat'
         ];
-        const isSuppressed = (m) => suppressed.some(s => String(m).toLowerCase().includes(s));
+        const isSuppressed = (m) => {
+          const s = String(m).toLowerCase();
+          return suppressed.some(k => s.includes(k));
+        };
         
         const originalError = console.error;
         const originalWarn = console.warn;
+        const originalLog = console.log;
         
         console.error = function(...args) {
           if (isSuppressed(args.join(' '))) return;
@@ -25,6 +27,10 @@
           if (isSuppressed(args.join(' '))) return;
           originalWarn.apply(console, args);
         };
+        console.log = function(...args) {
+          if (isSuppressed(args.join(' '))) return;
+          originalLog.apply(console, args);
+        };
         
         window.onerror = function(msg, url) {
           if (isSuppressed(msg) || isSuppressed(url)) return true;
@@ -32,8 +38,13 @@
         window.addEventListener('unhandledrejection', function(e) {
           if (isSuppressed(e.reason)) { e.preventDefault(); e.stopPropagation(); }
         });
+        
+        // Global flag for legacy devices to see
+        window.mira_legacy_mode = true;
       })();
     </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>mira</title>
   </head>
   <body>
     <div id="root"></div>

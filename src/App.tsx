@@ -10,6 +10,31 @@ const STUN_SERVERS = {
   ],
 };
 
+// Munge SDP to prefer H246 (Essential for older TV hardware decoders)
+const preferH264 = (sdp: string) => {
+  const lines = sdp.split("\r\n");
+  const mLineIndex = lines.findIndex(l => l.startsWith("m=video"));
+  if (mLineIndex === -1) return sdp;
+
+  const mLineParts = lines[mLineIndex].split(" ");
+  const h264Payloads: string[] = [];
+  
+  // Find all H264 payload types
+  lines.forEach(l => {
+    if (l.startsWith("a=rtpmap:") && l.includes("H264/90000")) {
+      const match = l.match(/a=rtpmap:(\d+)/);
+      if (match) h264Payloads.push(match[1]);
+    }
+  });
+
+  if (h264Payloads.length > 0) {
+    const otherPayloads = mLineParts.slice(3).filter(p => !h264Payloads.includes(p));
+    lines[mLineIndex] = mLineParts.slice(0, 3).join(" ") + " " + h264Payloads.join(" ") + " " + otherPayloads.join(" ");
+  }
+  
+  return lines.join("\r\n");
+};
+
 type Mode = "home" | "share" | "watch";
 
 export default function App() {
@@ -95,6 +120,15 @@ export default function App() {
         setStatus("Conectado al servidor");
         setIsConnected(true);
         reconnectAttempts.current = 0; // Reset attempts on success
+        
+        // Start Heartbeat to prevent Render/CDN timeouts
+        const heartbeat = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "heartbeat" }));
+          } else {
+            clearInterval(heartbeat);
+          }
+        }, 30000);
       };
 
       socket.onmessage = async (event) => {
@@ -229,6 +263,8 @@ export default function App() {
       if (data.type === "offer") {
         await pc.setRemoteDescription(new RTCSessionDescription(data));
         const answer = await pc.createAnswer();
+        // Force H264 on the answer
+        answer.sdp = preferH264(answer.sdp!);
         await pc.setLocalDescription(answer);
         sendSignal(answer, senderId);
         setStatus("Conectado (Recibiendo)");
@@ -288,21 +324,33 @@ export default function App() {
      };
 
     pc.ontrack = (event) => {
-      console.log("¡Canal de vídeo detectado! Iniciando pantalla...");
+      console.log("¡Señal detectada! Forzando decodificador...");
       if (remoteVideoRef.current) {
-        // Force refresh srcObject to ensure the decoder starts fresh
-        remoteVideoRef.current.srcObject = null;
-        remoteVideoRef.current.srcObject = event.streams[0];
+        const video = remoteVideoRef.current;
+        video.srcObject = null;
+        video.srcObject = event.streams[0];
         
-        // Use a loop or repeated play() to overcome some TV autoplay restrictions
-        const attemptPlay = () => {
-          if (!remoteVideoRef.current) return;
-          remoteVideoRef.current.play().catch(e => {
-            console.warn("Reintentando reproducción...", e.message);
-            setTimeout(attemptPlay, 1000);
+        // THE "LEGACY NUDGE" (V3)
+        // High-frequency attempt to wake up old Android/TV decoders
+        let attempts = 0;
+        const kickstart = () => {
+          if (!video || !event.streams[0] || attempts > 10) return;
+          attempts++;
+          
+          video.play().then(() => {
+            console.log("[mira] Reproducción iniciada con éxito");
+            // Briefly toggle volume to ensure audio engine is also awake
+            const v = video.volume;
+            video.volume = 0.01;
+            setTimeout(() => { video.volume = v; }, 200);
+          }).catch(() => {
+            console.debug("[mira] Reintentando arranque...");
+            setTimeout(kickstart, 1000);
           });
         };
-        attemptPlay();
+        
+        // Some TVs need a tiny delay after setting srcObject
+        setTimeout(kickstart, 500);
         
         // Auto-fullscreen logic
         if (mode === "watch" && !document.fullscreenElement && videoContainerRef.current) {
@@ -392,6 +440,8 @@ export default function App() {
         }
 
         const offer = await pc.createOffer();
+        // Force H264 on the offer
+        offer.sdp = preferH264(offer.sdp!);
         await pc.setLocalDescription(offer);
         sendSignal(offer, userId);
       }
