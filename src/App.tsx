@@ -38,31 +38,46 @@ export default function App() {
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    // Aggressively suppress expected Vite HMR errors in this environment
-    const isHmrError = (msg: string) => 
-      msg.includes("WebSocket closed without opened") || 
-      msg.includes("failed to connect to websocket") ||
-      msg.includes("Browsing Topics API");
+    // Aggressively suppress expected Vite HMR errors and browser extension noise
+    const isSuppressed = (msg: string, source?: string) => {
+      const combined = (msg + (source || "")).toLowerCase();
+      return combined.includes("websocket closed") || 
+             combined.includes("failed to connect") ||
+             combined.includes("browsing topics") ||
+             combined.includes("nodestructure.js") ||
+             combined.includes("getrangeat") ||
+             combined.includes("indexsizeerror") ||
+             combined.includes("receiving end does not exist");
+    };
 
     const handleRejection = (event: PromiseRejectionEvent) => {
-      const msg = event.reason?.message || String(event.reason);
-      if (isHmrError(msg)) {
+      if (isSuppressed(String(event.reason))) {
         event.preventDefault();
         event.stopPropagation();
       }
     };
 
-    // Also override console.error for these specific strings
+    const handleError = (msg: any, url?: string) => {
+      if (isSuppressed(String(msg), url)) {
+        return true; // Prevents the firing of the default event handler
+      }
+      return false;
+    };
+
+    // Override console.error for these specific strings
     const originalError = console.error;
     console.error = (...args) => {
       const msg = args.map(String).join(" ");
-      if (isHmrError(msg)) return;
+      if (isSuppressed(msg)) return;
       originalError.apply(console, args);
     };
 
     window.addEventListener("unhandledrejection", handleRejection);
+    window.onerror = handleError;
+    
     return () => {
       window.removeEventListener("unhandledrejection", handleRejection);
+      window.onerror = null;
       console.error = originalError;
     };
   }, []);
@@ -105,9 +120,23 @@ export default function App() {
                peerConnections.current.delete(message.userId);
                setParticipants(prev => prev.filter(p => p.id !== message.userId));
              } else {
-              setStatus("Transmisión finalizada por el emisor");
+              // Broadcaster left the room
+              const finalMessage = "Transmisión finalizada por el emisor. Volviendo al inicio...";
+              setStatus(finalMessage);
               if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
               setHasAudio(false);
+              
+              // If we are in watch mode, return to home after a few seconds
+              if (mode === "watch") {
+                setTimeout(() => {
+                  setMode("home");
+                  setAccessStatus("idle");
+                  setStatus("Listo para conectar");
+                  if (document.fullscreenElement) {
+                    document.exitFullscreen().catch(() => {});
+                  }
+                }, 3500);
+              }
             }
           } else if (message.type === "request-access") {
             setPendingRequests(prev => {
@@ -238,11 +267,25 @@ export default function App() {
     };
 
     pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed") {
+      const state = pc.iceConnectionState;
+      if (state === "disconnected" || state === "failed" || state === "closed") {
         if (mode === "watch") {
-          setStatus("Conexión perdida");
+          const lostMsg = "Conexión perdida con el emisor. Volviendo al inicio...";
+          setStatus(lostMsg);
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
           setHasAudio(false);
+          
+           // Return to home after delay
+           setTimeout(() => {
+            if (mode === "watch") {
+               setMode("home");
+               setAccessStatus("idle");
+               setStatus("Listo para conectar");
+               if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {});
+               }
+            }
+          }, 3500);
          }
          peerConnections.current.delete(targetId);
          setParticipants(prev => prev.filter(p => p.id !== targetId));

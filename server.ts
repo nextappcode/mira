@@ -175,14 +175,20 @@ async function startServer() {
     const distPath = path.resolve(__dirname, "dist");
     console.log(`[Server] Starting in PRODUCTION mode (Directory: ${distPath})`);
     
+    // Privacy and feature policy headers to quiet browser console warnings
+    app.use((req, res, next) => {
+      res.setHeader("Permissions-Policy", "browsing-topics=()");
+      next();
+    });
+
     // Diagnostic: List files in dist to help troubleshoot missing assets
     if (fs.existsSync(distPath)) {
       try {
         const files = fs.readdirSync(distPath);
-        console.log(`[Server] Files in dist: ${files.join(", ")}`);
+        console.log(`[Server] Files in dist root: ${files.join(", ")}`);
         if (files.includes("assets")) {
           const assets = fs.readdirSync(path.join(distPath, "assets"));
-          console.log(`[Server] Files in dist/assets: ${assets.join(", ")}`);
+          console.log(`[Server] Assets directory has ${assets.length} files`);
         }
       } catch (e) {
         console.warn("[Server] Could not list dist files", e);
@@ -199,14 +205,18 @@ async function startServer() {
     }));
 
     // Specific handler for assets to avoid MIME errors (don't serve index.html for missing assets)
-    app.get(["/assets/*", "*.css", "*.js", "*.png", "*.jpg", "*.svg"], (req, res) => {
-      res.status(404).send("Asset not found");
+    // Helps identify which asset failed to load
+    app.get(["/assets/*", "**/*.css", "**/*.js", "**/*.png", "**/*.jpg", "**/*.svg"], (req, res) => {
+      console.warn(`[404] Resource not found: ${req.url}`);
+      res.status(404).send(`Resource not found: ${req.url}`);
     });
 
-    // Root and SPA catch-all
+    // Root and SPA catch-all with no-cache for index.html
+    // This ensures users always get the latest asset hashes
     app.get("*", (req, res) => {
       const indexFile = path.join(distPath, "index.html");
       if (fs.existsSync(indexFile)) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         res.sendFile(indexFile);
       } else {
         res.status(404).send("Application files not found. Ensure 'npm run build' was executed.");
