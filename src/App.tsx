@@ -48,7 +48,15 @@ export default function App() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
+  // Bufferizamos ICE candidates para evitar pérdidas por orden de mensajes
+  // (muy común en dispositivos/implementaciones WebRTC antiguas).
+  const iceCandidateQueue = useRef<Map<string, any[]>>(new Map());
+  // Evita múltiples llamadas concurrentes a `play()` que en algunos TVs/Android
+  // generan `AbortError: play() interrupted by a new load request`.
+  const playInFlightRef = useRef(false);
+  const playBackupTimerRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -113,6 +121,7 @@ export default function App() {
                setParticipants(prev => prev.filter(p => p.id !== message.userId));
              } else {
               setStatus("Transmisión finalizada por el emisor");
+              remoteStreamRef.current = null;
               if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
               setHasAudio(false);
             }
@@ -217,7 +226,9 @@ export default function App() {
   const handleSignal = async (data: any, senderId: string) => {
     let pc = peerConnections.current.get(senderId);
     
-    if (!pc && data.type === "offer") {
+    // Si llegan candidates antes de que exista la PC, créala para poder acumular.
+    // Para `offer` también es válido (y antes era la única opción).
+    if (!pc && (data.type === "offer" || data.type === "candidate")) {
       pc = createPeerConnection(senderId);
     }
 
@@ -226,14 +237,37 @@ export default function App() {
     try {
       if (data.type === "offer") {
         await pc.setRemoteDescription(new RTCSessionDescription(data));
+        // En caso de que hayan llegado candidates antes del SDP,
+        // ahora que el remoteDescription existe, los podemos aplicar.
+        const queued = iceCandidateQueue.current.get(senderId) || [];
+        if (queued.length > 0) {
+          for (const candidate of queued) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          }
+          iceCandidateQueue.current.delete(senderId);
+        }
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         sendSignal(answer, senderId);
         setStatus("Conectado (Recibiendo)");
       } else if (data.type === "answer") {
         await pc.setRemoteDescription(new RTCSessionDescription(data));
+        const queued = iceCandidateQueue.current.get(senderId) || [];
+        if (queued.length > 0) {
+          for (const candidate of queued) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          }
+          iceCandidateQueue.current.delete(senderId);
+        }
         setStatus("Conectado (Transmitiendo)");
       } else if (data.type === "candidate") {
+        // Si el SDP remoto aún no está listo, bufferizamos para no romper la negociación.
+        if (!pc.remoteDescription) {
+          const prev = iceCandidateQueue.current.get(senderId) || [];
+          prev.push(data.candidate);
+          iceCandidateQueue.current.set(senderId, prev);
+          return;
+        }
         await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
       }
     } catch (err) {
@@ -273,36 +307,80 @@ export default function App() {
      };
 
     const handleStream = (stream: MediaStream) => {
+      remoteStreamRef.current = stream;
       const videoEl = remoteVideoRef.current;
       if (!videoEl || !stream) return;
 
       // STOPSHIP: Use a Ref to ensure we only assign the source ONCE for the entirety of the connection
-      if ((videoEl as any).__lastStreamId === stream.id) {
-         console.debug("Stream ya asignado (ID coincidente), bloqueando re-carga redundante.");
-         return;
+      const existingStream = videoEl.srcObject as MediaStream | null;
+      const existingVideoTrack = existingStream?.getVideoTracks?.()?.[0];
+      const newVideoTrack = stream.getVideoTracks?.()?.[0];
+
+      // Cuando los dispositivos/implementaciones antiguas disparan `onaddstream` y `ontrack`
+      // casi a la vez, es frecuente que intentemos reasignar `srcObject` dos veces.
+      // Eso puede causar `AbortError: play() interrupted by a new load request`.
+      // Por eso, en esos casos saltamos reasignar srcObject, pero no el intento de play.
+      let skipSrcObject = false;
+      if (playInFlightRef.current) {
+        skipSrcObject = true;
       }
+
+      // Si el evento llega dos veces (por `onaddstream` y `ontrack`) puede venir un `stream.id` distinto
+      // pero el track de video ser el mismo. En ese caso, evitamos reasignar srcObject.
+      if (existingVideoTrack?.id && newVideoTrack?.id && existingVideoTrack.id === newVideoTrack.id) {
+        console.debug("Video track ya asignado, bloqueando re-carga redundante.");
+        skipSrcObject = true;
+      }
+
+      if ((videoEl as any).__lastStreamId === stream.id) {
+        console.debug("Stream ya asignado (ID coincidente), bloqueando re-carga redundante.");
+        skipSrcObject = true;
+      }
+
+      // Si ya hay una pista de video viva asignada, evitamos reasignar srcObject
+      // (esto suele causar `AbortError: play() interrupted by a new load request`
+      // en TVs/Android antiguos cuando llegan eventos duplicados).
+      if (existingVideoTrack && existingVideoTrack.readyState && existingVideoTrack.readyState !== "ended") {
+        // Si el video ya tiene buffers suficientes (readyState>=2), asumimos que ya está listo.
+        // Si no tiene buffers (tv/ambiente lento), permitimos reasignar por compatibilidad.
+        if (videoEl.readyState >= 2) {
+          console.debug("srcObject ya tiene una pista viva y listo; omitiendo reasignación para evitar AbortError.");
+          skipSrcObject = true;
+        }
+      }
+
       (videoEl as any).__lastStreamId = stream.id;
+      (videoEl as any).__lastVideoTrackId = newVideoTrack?.id ?? null;
 
       console.log("¡Nueva señal de video recibida! ID:", stream.id, ". Vinculando...");
-      
-      let assigned = false;
-      const isAncient = /Chrome\/[34][0-9]\./.test(navigator.userAgent) || /Android [45]/.test(navigator.userAgent);
-      
-      if ('srcObject' in videoEl && !isAncient) {
-         try {
-            videoEl.srcObject = stream;
-            assigned = true;
-         } catch(e) {
-            console.warn("Fallo srcObject, usando fallback local...");
-         }
+      // Diagnóstico: ayuda a confirmar si realmente trae video tracks
+      try {
+        console.log("Video tracks:", stream.getVideoTracks().map(t => ({ id: t.id, readyState: t.readyState })));
+      } catch {
+        // ignore
       }
       
-      if (!assigned) {
+      let assigned = false;
+
+      // Compatibilidad: si existe `srcObject`, intentar siempre primero.
+      // Tu detección "isAncient" puede marcar dispositivos como antiguos incorrectamente,
+      // causando que se use el fallback que a veces no funciona para MediaStream.
+      if (!skipSrcObject && "srcObject" in videoEl) {
+        try {
+          videoEl.srcObject = stream;
+          assigned = true;
+        } catch (e) {
+          console.warn("Fallo al asignar srcObject, usando fallback...", e);
+        }
+      }
+      
+      if (!assigned && !skipSrcObject) {
          try {
             const vendorURL = window.URL || (window as any).webkitURL;
             if (vendorURL && vendorURL.createObjectURL) {
                console.log("Forzando fallback createObjectURL (Navegador antiguo detectado)");
                (videoEl as any).src = vendorURL.createObjectURL(stream as any);
+               assigned = true;
             }
          } catch(err) {
             console.error("Error al crear URL del stream:", err);
@@ -312,31 +390,55 @@ export default function App() {
       videoEl.muted = isMuted;
 
       const attemptPlay = () => {
-        if (!videoEl || !videoEl.paused) return; // Prevent aborting a successful play
+        if (!videoEl) return;
+        // Evita spamear si ya está reproduciendo y con datos listos.
+        if (!videoEl.paused && videoEl.readyState >= 2) return;
+        if (playInFlightRef.current) return;
         console.log("Intentando reproducir video...");
         try {
+           playInFlightRef.current = true;
            const p = videoEl.play();
            if (p && typeof p.catch === 'function') {
-              p.catch(e => {
-                if (e?.name !== 'AbortError') {
-                   setTimeout(() => { if (videoEl && videoEl.paused) videoEl.play().catch(() => {}) }, 2000);
+              p.then(() => {
+                playInFlightRef.current = false;
+                console.log("play() OK",
+                  { readyState: videoEl.readyState, w: videoEl.videoWidth, h: videoEl.videoHeight, t: videoEl.currentTime }
+                );
+              }).catch(e => {
+                // Si se interrumpe por un nuevo load (reasignación casi simultánea),
+                // simplemente esperamos al siguiente evento/backup.
+                if (e?.name === 'AbortError') {
+                  playInFlightRef.current = false;
+                  console.log("play() AbortError",
+                    { readyState: videoEl.readyState, w: videoEl.videoWidth, h: videoEl.videoHeight, t: videoEl.currentTime }
+                  );
+                  return;
                 }
+                playInFlightRef.current = false;
+                // No reintentes agresivamente; mejor un backup controlado abajo.
+                console.log("play() FAIL",
+                  { name: e?.name, readyState: videoEl.readyState, w: videoEl.videoWidth, h: videoEl.videoHeight, t: videoEl.currentTime }
+                );
               });
+           } else {
+              playInFlightRef.current = false;
            }
         } catch (syncError) {
-           setTimeout(() => { if (videoEl && videoEl.paused) videoEl.play() }, 1500);
+          playInFlightRef.current = false;
+          // Backup controlado abajo
         }
       };
 
-      // In TVs, sometimes onloadedmetadata is unreliable. Try immediately AND on event.
+      // Un solo intento inmediato + 1 backup controlado.
+      // Esto reduce el `AbortError` cuando llegan `onaddstream` y `ontrack` casi a la vez.
       attemptPlay();
-      videoEl.onloadedmetadata = () => {
-         console.log("Metadatos cargados");
-         attemptPlay();
-      };
-      
-      // Backup attempt just in case loadedmetadata doesn't fire immediately
-      setTimeout(attemptPlay, 1000);
+      if (playBackupTimerRef.current) window.clearTimeout(playBackupTimerRef.current);
+      playBackupTimerRef.current = window.setTimeout(() => {
+        if (!videoEl) return;
+        if (videoEl.paused && videoEl.readyState < 2) {
+          attemptPlay();
+        }
+      }, 1500);
 
       // Request fullscreen after a short delay to accommodate TV navigation buffers
       if (mode === "watch" && !document.fullscreenElement && videoContainerRef.current) {
@@ -354,9 +456,12 @@ export default function App() {
 
     pc.ontrack = (event) => {
       console.log("Evento ontrack detectado!");
-      if (event.streams && event.streams[0]) {
-        handleStream(event.streams[0]);
-      }
+      // En algunas implementaciones WebRTC antiguas (ciertos Android/TV),
+      // `event.streams` puede venir vacío aunque sí exista `event.track`.
+      const stream =
+        (event.streams && event.streams[0]) ? event.streams[0] :
+        (event.track ? new MediaStream([event.track]) : null);
+      if (stream) handleStream(stream);
     };
     // Legacy support for older browsers like Chrome 30-49 (Android 4.4 TV)
     (pc as any).onaddstream = (event: any) => {
@@ -474,6 +579,7 @@ export default function App() {
      setParticipants([]);
      setStatus("Compartición finalizada");
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    remoteStreamRef.current = null;
   };
 
   const togglePause = () => {
@@ -871,7 +977,16 @@ export default function App() {
                   className={`relative group shadow-2xl overflow-hidden bg-black ${isFullscreen ? 'w-screen h-screen' : 'aspect-video max-h-[60vh] rounded-2xl border border-zinc-800'}`}
                 >
                   <video 
-                    ref={remoteVideoRef} 
+                    ref={(el) => {
+                      remoteVideoRef.current = el;
+                      if (el && remoteStreamRef.current && el.srcObject !== remoteStreamRef.current) {
+                        try {
+                           el.srcObject = remoteStreamRef.current;
+                        } catch (e) {
+                           console.warn("Error restoring stream", e);
+                        }
+                      }
+                    }} 
                     autoPlay
                     playsInline 
                     {...({ "webkit-playsinline": "true" } as any)}
@@ -1009,21 +1124,13 @@ export default function App() {
 
                 <div className="mt-2 flex gap-3">
                   <button
-                    onClick={() => {
-                       // Request the broadcaster to send a brand new offer and refresh local video node
-                       if (remoteVideoRef.current) {
-                          remoteVideoRef.current.srcObject = null;
-                         (remoteVideoRef.current as any).__lastStreamId = null;
-                       }
-                       safeSend({ type: "request-offer", room: roomId, userId: myId });
-                       setStatus("Actualizando señal...");
-                    }}
-                    className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/30 font-bold py-2 px-4 rounded-xl transition-all text-[10px]"
+                    onClick={() => { stopSharing(); setMode("home"); }}
+                    className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 font-bold py-2 px-4 rounded-xl transition-all text-[11px]"
                   >
-                    Actualizar Señal
+                    Desconectar
                   </button>
                   <button
-                    onClick={() => { stopSharing(); setMode("home"); }}
+                    onClick={() => { setMode("home"); }}
                     className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2 px-4 rounded-xl transition-all text-[11px]"
                   >
                     Volver al Inicio
