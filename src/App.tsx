@@ -510,6 +510,56 @@ export default function App() {
     }
   };
 
+  const changeScreen = async () => {
+    try {
+      const newStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { 
+          cursor: "always",
+          width: { max: 1280, ideal: 1280 },
+          height: { max: 720, ideal: 720 },
+          frameRate: { max: 30, ideal: 24 }
+        } as any,
+        audio: true
+      });
+
+      // Stop old tracks to remove browser sharing banner for the old tab
+      streamRef.current?.getTracks().forEach(track => track.stop());
+      
+      streamRef.current = newStream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = newStream;
+      }
+
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      const newAudioTrack = newStream.getAudioTracks()[0];
+
+      if (newVideoTrack) {
+        newVideoTrack.onended = () => {
+          stopSharing();
+        };
+      }
+
+      // Seamlessly replace tracks without renegotiating
+      peerConnections.current.forEach(pc => {
+        if (!pc.getSenders) return;
+        const senders = pc.getSenders();
+        
+        const videoSender = senders.find(s => s.track && s.track.kind === "video");
+        if (videoSender && newVideoTrack) {
+          videoSender.replaceTrack(newVideoTrack).catch(e => console.warn("Fallback video replaceTrack:", e));
+        }
+        
+        const audioSender = senders.find(s => s.track && s.track.kind === "audio");
+        if (audioSender && newAudioTrack) {
+          audioSender.replaceTrack(newAudioTrack).catch(e => console.warn("Fallback audio replaceTrack:", e));
+        }
+      });
+      
+    } catch (err) {
+      console.error("Error changing screen:", err);
+    }
+  };
+
   const approveAccess = async (userId: string) => {
     try {
       const request = pendingRequests.find(r => r.id === userId);
@@ -812,8 +862,15 @@ export default function App() {
                   ) : (
                     <>
                       <button
+                        onClick={changeScreen}
+                        className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-2 rounded-xl transition-all flex items-center justify-center gap-2 text-xs md:text-sm shadow-lg whitespace-nowrap"
+                        title="Cambiar origen de transmisión"
+                      >
+                        <Monitor size={16} /> <span className="hidden md:inline">Cambiar</span>
+                      </button>
+                      <button
                         onClick={togglePause}
-                        className={`flex-1 ${isPaused ? 'bg-amber-500' : 'bg-zinc-700'} text-white font-bold py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-lg`}
+                        className={`flex-1 ${isPaused ? 'bg-amber-500' : 'bg-zinc-700'} text-white font-bold py-3 px-2 rounded-xl transition-all flex items-center justify-center gap-2 text-xs md:text-sm shadow-lg whitespace-nowrap`}
                       >
                         {isPaused ? <Eye size={18} /> : <EyeOff size={18} />}
                         {isPaused ? "Reanudar" : "Pausar"}
