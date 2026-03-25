@@ -351,16 +351,23 @@ export default function App() {
       // (esto suele causar `AbortError: play() interrupted by a new load request`
       // en TVs/Android antiguos cuando llegan eventos duplicados).
       if (existingVideoTrack && existingVideoTrack.readyState && existingVideoTrack.readyState !== "ended") {
-        // Si el video ya tiene buffers suficientes (readyState>=2), asumimos que ya está listo.
-        // Si no tiene buffers (tv/ambiente lento), permitimos reasignar por compatibilidad.
-        if (videoEl.readyState >= 2) {
-          console.debug("srcObject ya tiene una pista viva y listo; omitiendo reasignación para evitar AbortError.");
-          skipSrcObject = true;
+        // PERO: Si el nuevo stream trae pistas de audio que el anterior no tenía,
+        // tenemos que reasignar sí o sí para que suene el audio.
+        const existingAudioTrack = existingStream?.getAudioTracks?.()?.[0];
+        const newAudioTrack = stream.getAudioTracks?.()?.[0];
+        
+        if (newAudioTrack && !existingAudioTrack) {
+           console.log("Detectada nueva pista de audio; forzando reasignación de srcObject para habilitar sonido.");
+           skipSrcObject = false; 
+        } else if (videoEl.readyState >= 2) {
+           console.debug("srcObject ya tiene una pista viva y listo; omitiendo reasignación para evitar AbortError.");
+           skipSrcObject = true;
         }
       }
 
       (videoEl as any).__lastStreamId = stream.id;
       (videoEl as any).__lastVideoTrackId = newVideoTrack?.id ?? null;
+      (videoEl as any).__lastAudioTrackId = stream.getAudioTracks?.()?.[0]?.id ?? null;
 
       console.log("¡Nueva señal de video recibida! ID:", stream.id, ". Vinculando...");
       // Diagnóstico: ayuda a confirmar si realmente trae video tracks
@@ -949,6 +956,17 @@ export default function App() {
                     Volver
                   </button>
                 </div>
+                
+                {isSharing && (
+                  <div className="mt-3 bg-blue-500/10 border border-blue-500/20 p-3 rounded-xl flex items-start gap-3">
+                     <Volume2 className="text-blue-500 shrink-0 mt-0.5" size={16} />
+                     <p className="text-[10px] text-blue-200/80 leading-relaxed">
+                        <b>IMPORTANTE:</b> Para compartir sonido, asegúrate de marcar la casilla 
+                        <span className="text-blue-400 font-bold"> "Compartir audio del sistema"</span> 
+                        en el diálogo de selección de pantalla de tu navegador.
+                     </p>
+                  </div>
+                )}
 
                 {/* Pending Requests for Broadcaster */}
                 {isSharing && pendingRequests.length > 0 && (
@@ -1187,8 +1205,17 @@ export default function App() {
                         <div className="flex gap-2">
                           {hasAudio && (
                             <button
-                              onClick={() => setIsMuted(!isMuted)}
-                              className="bg-black/60 backdrop-blur-md p-2 rounded-lg text-white hover:bg-emerald-500 transition-colors"
+                              onClick={() => {
+                                const newMuted = !isMuted;
+                                setIsMuted(newMuted);
+                                // Force play() and jump to live to kickstart audio engine on some TVs
+                                if (!newMuted && remoteVideoRef.current) {
+                                  const v = remoteVideoRef.current;
+                                  v.play().catch(() => {});
+                                  if (v.currentTime > 0) v.currentTime += 0.01; 
+                                }
+                              }}
+                              className={`bg-black/60 backdrop-blur-md p-2 rounded-lg text-white hover:bg-emerald-500 transition-colors ${!isMuted ? 'text-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : ''}`}
                               title={isMuted ? "Activar sonido" : "Silenciar"}
                             >
                               {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
