@@ -20,16 +20,6 @@ const RTCIceCandidate = (window as any).RTCIceCandidate || (window as any).webki
 // Browser Compatibility Check
 const hasWebRTC = typeof RTCPeerConnection !== "undefined";
 
-// Detect legacy Android TVs/Browsers (e.g. Chrome < 60, Tizen, webOS older versions)
-const isLegacyDevice = (() => {
-  const ua = navigator.userAgent;
-  const isAndroid = /Android/i.test(ua);
-  const isTV = /TV|LargeScreen|SmartTV|Web0S|Tizen/i.test(ua);
-  const chromeMatch = ua.match(/Chrome\/(\d+)/);
-  const chromeVersion = chromeMatch ? parseInt(chromeMatch[1]) : 999;
-  return isTV || (isAndroid && chromeVersion < 60) || chromeVersion < 50;
-})();
-
 export default function App() {
   const [mode, setMode] = useState<Mode>("home");
   const [roomId, setRoomId] = useState("");
@@ -351,23 +341,16 @@ export default function App() {
       // (esto suele causar `AbortError: play() interrupted by a new load request`
       // en TVs/Android antiguos cuando llegan eventos duplicados).
       if (existingVideoTrack && existingVideoTrack.readyState && existingVideoTrack.readyState !== "ended") {
-        // PERO: Si el nuevo stream trae pistas de audio que el anterior no tenía,
-        // tenemos que reasignar sí o sí para que suene el audio.
-        const existingAudioTrack = existingStream?.getAudioTracks?.()?.[0];
-        const newAudioTrack = stream.getAudioTracks?.()?.[0];
-        
-        if (newAudioTrack && !existingAudioTrack) {
-           console.log("Detectada nueva pista de audio; forzando reasignación de srcObject para habilitar sonido.");
-           skipSrcObject = false; 
-        } else if (videoEl.readyState >= 2) {
-           console.debug("srcObject ya tiene una pista viva y listo; omitiendo reasignación para evitar AbortError.");
-           skipSrcObject = true;
+        // Si el video ya tiene buffers suficientes (readyState>=2), asumimos que ya está listo.
+        // Si no tiene buffers (tv/ambiente lento), permitimos reasignar por compatibilidad.
+        if (videoEl.readyState >= 2) {
+          console.debug("srcObject ya tiene una pista viva y listo; omitiendo reasignación para evitar AbortError.");
+          skipSrcObject = true;
         }
       }
 
       (videoEl as any).__lastStreamId = stream.id;
       (videoEl as any).__lastVideoTrackId = newVideoTrack?.id ?? null;
-      (videoEl as any).__lastAudioTrackId = stream.getAudioTracks?.()?.[0]?.id ?? null;
 
       console.log("¡Nueva señal de video recibida! ID:", stream.id, ". Vinculando...");
       // Diagnóstico: ayuda a confirmar si realmente trae video tracks
@@ -452,11 +435,10 @@ export default function App() {
       if (playBackupTimerRef.current) window.clearTimeout(playBackupTimerRef.current);
       playBackupTimerRef.current = window.setTimeout(() => {
         if (!videoEl) return;
-        // Si sigue pausado o el readyState es bajo, intentamos play de nuevo.
-        if (videoEl.paused || videoEl.readyState < 2) {
+        if (videoEl.paused && videoEl.readyState < 2) {
           attemptPlay();
         }
-      }, isLegacyDevice ? 2500 : 1500); // Dar más tiempo a los TVs lentos para bufferizar
+      }, 1500);
 
       // Request fullscreen after a short delay to accommodate TV navigation buffers
       if (mode === "watch" && !document.fullscreenElement && videoContainerRef.current) {
@@ -504,7 +486,7 @@ export default function App() {
           // Constraint to prevent ancient TV decoders from crashing with 1080p+ streams
           width: { max: 1280, ideal: 1280 },
           height: { max: 720, ideal: 720 },
-          frameRate: { max: 24, ideal: 24 } // Lowered from 30 to 24 for better stability on old hardware
+          frameRate: { max: 30, ideal: 24 }
         } as any,
         audio: true
       });
@@ -597,86 +579,38 @@ export default function App() {
       if (streamRef.current) {
          streamRef.current.getTracks().forEach(track => {
             if (streamRef.current) {
-               // Hint that this is screen content to optimize for clarity/detail
-               if (track.kind === 'video' && 'contentHint' in track) {
-                  (track as any).contentHint = 'detail';
+               const sender = pc.addTrack(track, streamRef.current);
+               // STOPSHIP: Force H264 Codec. Ancient TVs usually fail silently on VP8/VP9 hardware decoders.
+               if (track.kind === 'video' && pc.getTransceivers && window.RTCRtpReceiver && (window.RTCRtpReceiver as any).getCapabilities) {
+                   const caps = (window.RTCRtpReceiver as any).getCapabilities('video');
+                   if (caps && caps.codecs) {
+                       const h264Codecs = caps.codecs.filter((c: any) => c.mimeType.toLowerCase() === 'video/h264');
+                       const otherCodecs = caps.codecs.filter((c: any) => c.mimeType.toLowerCase() !== 'video/h264');
+                       if (h264Codecs.length > 0) {
+                           const transceivers = pc.getTransceivers();
+                           const videoTransceiver = transceivers.find(t => t.sender === sender);
+                           if (videoTransceiver && videoTransceiver.setCodecPreferences) {
+                               try {
+                                   videoTransceiver.setCodecPreferences([...h264Codecs, ...otherCodecs]);
+                                   console.log("Forzado hardware de video a H264 para mayor compatibilidad con TVs.");
+                               } catch (e) {
+                                   console.warn("Falló el forzado a H264:", e);
+                               }
+                           }
+                       }
+                   }
                }
-               pc.addTrack(track, streamRef.current);
             }
          });
 
          const offer = await pc.createOffer();
-         // Munge SDP to force bitrate and prefer H264 Baseline for legacy TVs
-         const mungedOffer = mungeSDP(offer.sdp || "");
-         const finalOffer = new RTCSessionDescription({ type: 'offer', sdp: mungedOffer });
-         
-         await pc.setLocalDescription(finalOffer);
-         sendSignal(finalOffer, userId);
+         await pc.setLocalDescription(offer);
+         sendSignal(offer, userId);
       }
     } catch (err) {
       console.error("Error approving access:", err);
       setStatus("Error al conectar con el usuario");
     }
-  };
-
-  /**
-   * Senior-level SDP Munging:
-   * 1. Forces H.264 Baseline Profile 3.1 (the most compatible profile for old hardware)
-   * 2. Sets a hard limit on bitrate (1200kbps) to prevent decoder buffer overflows
-   * 3. Completely removes high-overhead codecs like VP9 and VP8
-   */
-  const mungeSDP = (sdp: string) => {
-    let lines = sdp.split('\r\n');
-    
-    // 1. Force Max Bitrate to 1200kbps (sufficient for clear 720p 24fps)
-    const videoIdx = lines.findIndex(l => l.startsWith('m=video'));
-    if (videoIdx !== -1) {
-      // Chrome/Android specific bitrate constraint
-      lines.splice(videoIdx + 1, 0, 'b=AS:1200', 'b=TIAS:1200000');
-    }
-
-    // 2. Identify and Filter Codecs
-    // Some old TVs crash if they see VP9 in the negotiation list even if not selected.
-    const forbiddenPayloads: string[] = [];
-    const h264Payloads: string[] = [];
-    
-    lines.forEach(line => {
-      if (line.startsWith('a=rtpmap:')) {
-        const payload = line.split(':')[1].split(' ')[0];
-        if (line.toLowerCase().includes('vp9') || line.toLowerCase().includes('vp8')) {
-          forbiddenPayloads.push(payload);
-        } else if (line.toLowerCase().includes('h264')) {
-          h264Payloads.push(payload);
-        }
-      }
-    });
-
-    // 3. Force H.264 Baseline Profile in fmtp if available
-    // 42e01f is Constrained Baseline Profile Level 3.1
-    lines = lines.map(line => {
-       if (line.startsWith('a=fmtp:') && h264Payloads.some(p => line.includes('a=fmtp:' + p))) {
-          return line.replace(/profile-level-id=[0-9a-fA-F]+/, 'profile-level-id=42e01f');
-       }
-       return line;
-    });
-
-    // 4. Update the m=video line to only include H264 and non-forbidden tracks
-    if (videoIdx !== -1) {
-      const parts = lines[videoIdx].split(' ');
-      const preamble = parts.slice(0, 3);
-      const payloads = parts.slice(3);
-      
-      const filtered = payloads.filter(p => !forbiddenPayloads.includes(p));
-      const reordered = [
-        ...filtered.filter(p => h264Payloads.includes(p)),
-        ...filtered.filter(p => !h264Payloads.includes(p))
-      ];
-      
-      lines[videoIdx] = preamble.join(' ') + ' ' + reordered.join(' ');
-    }
-    
-    // Clean up empty lines
-    return lines.filter(l => l.trim() !== '').join('\r\n');
   };
 
   const denyAccess = (userId: string) => {
@@ -898,7 +832,7 @@ export default function App() {
                     autoPlay 
                     playsInline 
                     muted 
-                    className={`w-full h-full object-contain transition-all duration-700 ${isPaused && !isLegacyDevice ? 'blur-2xl opacity-50 scale-105' : isPaused ? 'opacity-20 grayscale' : ''}`}
+                    className={`w-full h-full object-contain transition-all duration-700 ${isPaused ? 'blur-2xl opacity-50 scale-105' : ''}`}
                   />
                   {isPaused && (
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -956,17 +890,6 @@ export default function App() {
                     Volver
                   </button>
                 </div>
-                
-                {isSharing && (
-                  <div className="mt-3 bg-blue-500/10 border border-blue-500/20 p-3 rounded-xl flex items-start gap-3">
-                     <Volume2 className="text-blue-500 shrink-0 mt-0.5" size={16} />
-                     <p className="text-[10px] text-blue-200/80 leading-relaxed">
-                        <b>IMPORTANTE:</b> Para compartir sonido, asegúrate de marcar la casilla 
-                        <span className="text-blue-400 font-bold"> "Compartir audio del sistema"</span> 
-                        en el diálogo de selección de pantalla de tu navegador.
-                     </p>
-                  </div>
-                )}
 
                 {/* Pending Requests for Broadcaster */}
                 {isSharing && pendingRequests.length > 0 && (
@@ -1126,7 +1049,7 @@ export default function App() {
                     {...({ "webkit-playsinline": "true" } as any)}
                     muted={isMuted}
                     style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                    className={`block bg-black ${isPaused ? (isLegacyDevice ? 'opacity-20' : 'opacity-30 blur-sm') : 'opacity-100'}`}
+                    className={`block bg-black ${isPaused ? 'opacity-30' : 'opacity-100'}`}
                     onTimeUpdate={(e) => {
                        if (e.currentTarget.currentTime > 0.1 && !hasValidFrames) {
                           console.log("¡Frames reales verificados en pantalla!");
@@ -1138,17 +1061,17 @@ export default function App() {
                   <AnimatePresence>
                     {isPaused && (
                       <motion.div 
-                        initial={isLegacyDevice ? { opacity: 0 } : { opacity: 0 }}
+                        initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className={`absolute inset-0 z-10 flex flex-col items-center justify-center text-center p-8 ${isLegacyDevice ? 'bg-zinc-950' : 'bg-zinc-950/40 backdrop-blur-sm'}`}
+                        className="absolute inset-0 z-10 flex flex-col items-center justify-center text-center p-8 bg-zinc-950/40 backdrop-blur-sm"
                       >
                         <motion.div 
                           initial={{ scale: 0.8 }}
-                          animate={isLegacyDevice ? {} : { scale: 1 }}
-                          className={`w-24 h-24 bg-amber-500/20 rounded-full flex items-center justify-center mb-8 border border-amber-500/30 ${isLegacyDevice ? '' : ''}`}
+                          animate={{ scale: 1 }}
+                          className="w-24 h-24 bg-amber-500/20 rounded-full flex items-center justify-center mb-8 border border-amber-500/30"
                         >
-                          <Pause className={`text-amber-500 w-12 h-12 ${isLegacyDevice ? '' : 'animate-pulse'}`} />
+                          <Pause className="text-amber-500 w-12 h-12 animate-pulse" />
                         </motion.div>
                         <h3 className="text-3xl font-black text-white mb-4 tracking-tight">Transmisión en espera</h3>
                         <p className="text-zinc-300 max-w-sm leading-relaxed text-lg">
@@ -1205,17 +1128,8 @@ export default function App() {
                         <div className="flex gap-2">
                           {hasAudio && (
                             <button
-                              onClick={() => {
-                                const newMuted = !isMuted;
-                                setIsMuted(newMuted);
-                                // Force play() and jump to live to kickstart audio engine on some TVs
-                                if (!newMuted && remoteVideoRef.current) {
-                                  const v = remoteVideoRef.current;
-                                  v.play().catch(() => {});
-                                  if (v.currentTime > 0) v.currentTime += 0.01; 
-                                }
-                              }}
-                              className={`bg-black/60 backdrop-blur-md p-2 rounded-lg text-white hover:bg-emerald-500 transition-colors ${!isMuted ? 'text-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : ''}`}
+                              onClick={() => setIsMuted(!isMuted)}
+                              className="bg-black/60 backdrop-blur-md p-2 rounded-lg text-white hover:bg-emerald-500 transition-colors"
                               title={isMuted ? "Activar sonido" : "Silenciar"}
                             >
                               {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
