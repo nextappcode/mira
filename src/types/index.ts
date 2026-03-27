@@ -12,8 +12,8 @@ export interface PendingRequest {
 }
 
 export interface SignalMessage {
-  id?: string;
   type: string;
+  id?: string;
   data?: any;
   sender?: string;
   userId?: string;
@@ -23,4 +23,6 @@ export interface SignalMessage {
   broadcasterId?: string;
   paused?: boolean;
   renegotiate?: boolean;
+  room?: string;
+  exists?: boolean;
 }

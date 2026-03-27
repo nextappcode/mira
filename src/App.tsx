@@ -86,6 +86,17 @@ export default function App() {
                renegotiate(message.userId);
             }
             break;
+            
+          case "check-room-response":
+            if (message.exists) {
+              performRequestJoin();
+            } else {
+              setAccessStatus("idle");
+              setStatus("Sala no encontrada");
+              alert("La sala '" + roomId + "' no existe. Por favor verifica el código.");
+              setMode("home");
+            }
+            break;
         }
       } catch (err) { /* ignore */ }
     };
@@ -156,6 +167,12 @@ export default function App() {
       setAccessStatus("granted");
       setStatus("Acceso concedido");
       setupPeerConnection(broadcasterId);
+      // Auto-fullscreen on connection
+      setTimeout(() => {
+        if (videoContainerRef.current) {
+          videoContainerRef.current.requestFullscreen().catch(() => {});
+        }
+      }, 1000);
     } else {
       setAccessStatus("denied");
       setStatus("Acceso denegado");
@@ -168,10 +185,23 @@ export default function App() {
     
     // Set up receiving end
     pc.ontrack = (event) => {
-      const stream = (event.streams && event.streams[0]) ? event.streams[0] : (event.track ? new MediaStream([event.track]) : null);
-      if (stream) {
+      if (event.streams && event.streams[0]) {
+        const stream = event.streams[0];
         setRemoteStream(stream);
         setHasAudio(stream.getAudioTracks().length > 0);
+      } else if (event.track) {
+        // Fallback for older browsers or simple tracks
+        setRemoteStream(prev => {
+          if (prev) {
+             if (!prev.getTracks().find(t => t.id === event.track.id)) {
+               prev.addTrack(event.track);
+             }
+             return prev;
+          }
+          const s = new MediaStream([event.track]);
+          setHasAudio(s.getAudioTracks().length > 0);
+          return s;
+        });
       }
     };
     
@@ -246,8 +276,7 @@ export default function App() {
     safeSend({ type: "access-response", targetId: userId, granted: false });
   };
 
-  const requestJoin = () => {
-    if (!roomId) return alert("Ingresa ID de sala");
+  const performRequestJoin = () => {
     setAccessStatus("requesting");
     if (safeSend({ type: "join", room: roomId })) {
       safeSend({ type: "request-access", room: roomId, userName: "Usuario TV" });
@@ -256,6 +285,13 @@ export default function App() {
       setStatus("Error de conexión");
       setAccessStatus("idle");
     }
+  };
+
+  const requestJoin = () => {
+    if (!roomId) return alert("Ingresa ID de sala");
+    setAccessStatus("requesting");
+    setStatus("Verificando sala...");
+    safeSend({ type: "check-room", room: roomId });
   };
 
   const togglePause = () => {
@@ -300,14 +336,29 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] font-sans selection:bg-[var(--p-500)]/30 overflow-x-hidden">
-      <Header 
-        isConnected={isConnected} 
-        onHomeClick={() => { stopSharing(); setMode("home"); }} 
-      />
+    <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] font-sans selection:bg-[var(--p-500)]/30 overflow-x-hidden flex flex-col items-center">
+      <div className="w-full">
+        <Header 
+          isConnected={isConnected} 
+          onHomeClick={() => { 
+             if (mode !== "home") {
+               if (confirm('¿Quieres salir? Se detendrá la sesión.')) {
+                 if (mode === 'share') stopSharing();
+                 setMode("home");
+               }
+             } else {
+               setMode("home");
+             }
+          }}
+          roomId={mode !== "home" ? roomId : undefined}
+          status={mode !== "home" ? status : undefined}
+          isLive={mode === 'share' ? isSharing : (mode === 'watch' && status.includes('Conectado'))}
+        />
+      </div>
 
-      <main className="max-w-6xl mx-auto p-4 md:p-8">
-        <AnimatePresence mode="wait">
+      <main className="w-full max-w-6xl p-4 md:p-8 flex-1 flex flex-col items-center justify-center">
+        <div className="w-full">
+          <AnimatePresence mode="wait">
           {mode === "home" && (
             <ModeSelection 
               roomId={roomId}
@@ -317,7 +368,15 @@ export default function App() {
                 setRoomId(newId);
                 setMode("share");
               }} 
-              onWatch={() => setMode("watch")} 
+              onWatch={() => {
+                setMode("watch");
+                if (roomId.length === 5) {
+                   // Minimal delay to ensure transition is smooth but gesture is kept
+                   setTimeout(() => {
+                     requestJoin();
+                   }, 50);
+                }
+              }} 
             />
           )}
 
@@ -363,11 +422,12 @@ export default function App() {
             />
           )}
         </AnimatePresence>
+        </div>
       </main>
 
-      <footer className="p-8 text-center text-[var(--text-subtle)] text-[var(--text-xs)] font-medium">
+      <footer className="w-full p-8 text-center text-[var(--text-subtle)] text-[var(--text-xs)] font-medium">
         <p>© nextappcode • todos los derechos reservados</p>
       </footer>
-    </div>
+</div>
   );
 }

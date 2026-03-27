@@ -20,14 +20,18 @@ export const VideoView: React.FC<VideoViewProps> = ({
   const playInFlight = useRef(false);
 
   useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
+  useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl || !stream) return;
 
-    // Check if current srcObject is already the stream
     if (videoEl.srcObject !== stream) {
       videoEl.srcObject = stream;
-      videoEl.muted = isMuted;
-
+      
       const attemptPlay = () => {
         if (playInFlight.current) return;
         playInFlight.current = true;
@@ -40,7 +44,7 @@ export const VideoView: React.FC<VideoViewProps> = ({
       };
       attemptPlay();
     }
-  }, [stream, isMuted]);
+  }, [stream]);
 
   return (
     <div className={`relative aspect-video bg-[var(--bg-main)] rounded-[var(--radius-lg)] border border-[var(--border-subtle)] overflow-hidden ${className}`}>

@@ -54,6 +54,11 @@ async function startServer() {
         const message = JSON.parse(data.toString());
 
         switch (message.type) {
+          case "check-room":
+            const exists = rooms.has(message.room) && rooms.get(message.room)!.size > 0;
+            ws.send(JSON.stringify({ type: "check-room-response", room: message.room, exists }));
+            break;
+
           case "join":
             currentRoom = message.room;
             if (!rooms.has(currentRoom!)) {
