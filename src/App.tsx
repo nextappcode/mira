@@ -323,30 +323,37 @@ export default function App() {
     const el = videoContainerRef.current as any;
     if (!el) return;
     
+    const fallbackToPseudo = () => {
+       el.classList.add('pseudo-fullscreen-fallback');
+    };
+
     try {
       if (!document.fullscreenElement && !(document as any).webkitFullscreenElement && !(document as any).mozFullScreenElement) {
         if (el.requestFullscreen) {
-          el.requestFullscreen().catch(() => {});
+          el.requestFullscreen().catch(() => fallbackToPseudo());
         } else if (el.webkitRequestFullscreen) {
           el.webkitRequestFullscreen();
+          setTimeout(() => { if (!(document as any).webkitFullscreenElement) fallbackToPseudo(); }, 200);
         } else if (el.mozRequestFullScreen) {
           el.mozRequestFullScreen();
-        } else if (el.msRequestFullscreen) {
-          el.msRequestFullscreen();
+          setTimeout(() => { if (!(document as any).mozFullScreenElement) fallbackToPseudo(); }, 200);
+        } else {
+           fallbackToPseudo();
         }
       } else {
+        // Salir Pantalla Completa...
+        el.classList.remove('pseudo-fullscreen-fallback');
         if (document.exitFullscreen) {
-          document.exitFullscreen();
+          document.exitFullscreen().catch(()=>{});
         } else if ((document as any).webkitExitFullscreen) {
           (document as any).webkitExitFullscreen();
         } else if ((document as any).mozCancelFullScreen) {
           (document as any).mozCancelFullScreen();
-        } else if ((document as any).msExitFullscreen) {
-          (document as any).msExitFullscreen();
         }
       }
     } catch (e) {
-      console.warn("Fullscreen API not supported:", e);
+      console.warn("Fullscreen API fully blocked, using CSS fallback", e);
+      fallbackToPseudo();
     }
   };
 

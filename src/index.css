@@ -63,3 +63,19 @@ button:active {
 input, button {
   min-height: 48px;
 }
+
+/* Fallback agresivo para forzar pantalla completa cuando el navegador bloquea la API nativa */
+.pseudo-fullscreen-fallback {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 999999 !important;
+  background-color: black !important;
+  border-radius: 0 !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+}
