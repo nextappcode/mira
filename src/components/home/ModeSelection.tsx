@@ -16,30 +16,34 @@ export const ModeSelection: React.FC<ModeSelectionProps> = ({ roomId, setRoomId,
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-[440px] bg-[var(--bg-soft)] border border-[var(--border-subtle)] p-8 md:p-10 rounded-[40px] shadow-[var(--shadow-premium)] relative overflow-hidden"
+        className="w-full max-w-[480px] bg-[var(--bg-soft)] border border-[var(--border-subtle)] rounded-[40px] shadow-[var(--shadow-premium)] relative overflow-hidden"
+        style={{ padding: '48px' }}
       >
         {/* Decorative background effects */}
         <div className="absolute -top-32 -right-32 w-80 h-80 bg-[var(--energy)]/5 blur-[120px] rounded-full pointer-events-none" />
         <div className="absolute -bottom-32 -left-32 w-80 h-80 bg-[var(--p-500)]/5 blur-[120px] rounded-full pointer-events-none" />
 
-        <div className="relative z-10">
-          <header className="mb-8">
-            <h1 className="text-4xl font-black tracking-tighter text-[var(--text-main)] font-heading mb-4 leading-tight">
+        <div className="relative z-10 flex flex-col" style={{ gap: '36px' }}>
+          {/* Header */}
+          <div className="flex flex-col" style={{ gap: '12px' }}>
+            <h1 className="text-4xl font-black tracking-tighter text-[var(--text-main)] font-heading leading-tight m-0">
               Bienvenido
             </h1>
-            <p className="text-[var(--text-muted)] leading-relaxed text-sm font-medium opacity-80">
+            <p className="text-[var(--text-muted)] leading-relaxed text-[14px] font-medium opacity-80 max-w-[90%] m-0">
               Crea una sala o únete a una para transmitir video en tiempo real.
             </p>
-          </header>
+          </div>
 
-          <div className="space-y-8">
-            <div className="space-y-3">
+          <div className="flex flex-col w-full" style={{ gap: '28px' }}>
+            {/* Input Group */}
+            <div className="flex flex-col" style={{ gap: '16px' }}>
               <label 
                 htmlFor="room-id" 
-                className="text-[10px] font-black text-[var(--text-subtle)] uppercase tracking-[0.25em] ml-1 flex items-center gap-2"
+                className="text-[11px] font-black text-[var(--text-subtle)] uppercase tracking-[0.25em] ml-1 flex items-center gap-2 m-0"
               >
-                <Hash size={12} className="text-[var(--energy)]" /> ID DE LA SALA
+                <Hash size={14} className="text-[var(--energy)]" /> ID DE LA SALA
               </label>
+              
               <div className="relative group">
                 <input
                   id="room-id"
@@ -54,7 +58,7 @@ export const ModeSelection: React.FC<ModeSelectionProps> = ({ roomId, setRoomId,
                   }}
                   autoFocus
                   placeholder="Ingresa el ID"
-                  className="w-full h-16 bg-[var(--bg-main)] border-2 border-[var(--border-subtle)] rounded-2xl px-6 text-xl font-black text-[var(--text-main)] tracking-[0.1em] transition-all focus:outline-none focus:border-[var(--energy)]/50 focus:ring-8 focus:ring-[var(--energy)]/10 placeholder:text-[var(--text-subtle)]/30 group-hover:border-[var(--border-strong)] shadow-inner"
+                  className="w-full h-[64px] bg-[var(--bg-main)] border-2 border-[var(--border-subtle)] rounded-2xl px-6 text-xl font-black text-[var(--text-main)] tracking-[0.1em] transition-all focus:outline-none focus:border-[var(--energy)]/50 focus:ring-8 focus:ring-[var(--energy)]/10 placeholder:text-[var(--text-subtle)]/30 group-hover:border-[var(--border-strong)] shadow-inner"
                 />
                 {roomId && (
                   <button 
@@ -67,12 +71,13 @@ export const ModeSelection: React.FC<ModeSelectionProps> = ({ roomId, setRoomId,
               </div>
             </div>
 
-            <div className="grid grid-cols-5 gap-3">
+            {/* Actions */}
+            <div className="grid grid-cols-5 gap-4">
               <button
                 onClick={onWatch}
                 autoFocus
                 disabled={!roomId}
-                className="col-span-3 h-14 bg-[var(--energy)] hover:bg-[var(--energy-hover)] disabled:grayscale disabled:opacity-20 text-white font-black rounded-2xl transition-all shadow-[var(--shadow-glow-p)] active:scale-[0.98] flex items-center justify-center gap-2 group border border-white/10"
+                className="col-span-3 h-[56px] bg-[var(--energy)] hover:bg-[var(--energy-hover)] disabled:grayscale disabled:opacity-20 text-white text-[15px] font-black rounded-2xl transition-all shadow-[var(--shadow-glow-p)] active:scale-[0.98] flex items-center justify-center gap-2 group border border-white/10"
               >
                 UNIRSE <ArrowRight size={20} className="group-hover:translate-x-1.5 transition-transform" />
               </button>
@@ -80,7 +85,7 @@ export const ModeSelection: React.FC<ModeSelectionProps> = ({ roomId, setRoomId,
               <button
                 onClick={onShare}
                 title="Generar ID"
-                className="col-span-2 h-14 bg-[var(--bg-muted)] hover:bg-[var(--border-strong)] text-[var(--text-main)] font-black rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 border border-[var(--border-subtle)] hover:shadow-lg group text-[10px] tracking-tight"
+                className="col-span-2 h-[56px] bg-[var(--bg-muted)] hover:bg-[var(--border-strong)] text-[var(--text-main)] font-black rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 border border-[var(--border-subtle)] hover:shadow-lg group text-[11px] tracking-tight"
               >
                 <Sparkles size={16} className="text-[var(--energy)]" />
                 NUEVO ID

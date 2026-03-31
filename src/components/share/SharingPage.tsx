@@ -57,43 +57,46 @@ export const SharingPage: React.FC<SharingPageProps> = ({
       </div>
 
       {/* Right Column: Controls & Info */}
-      <div className="lg:col-span-4 flex flex-col gap-4 overflow-hidden">
-        <div className="bg-[var(--bg-soft)] border border-[var(--border-subtle)] p-5 rounded-[var(--radius-xl)] shadow-[var(--shadow-md)] flex flex-col gap-5">
-           <h3 className="text-[var(--text-xs)] font-black text-[var(--text-subtle)] uppercase tracking-[0.2em]">Controles de Sala</h3>
-           <div className="grid gap-3">
+      <div className="lg:col-span-4 flex flex-col overflow-hidden" style={{ gap: '16px' }}>
+        <div 
+          className="bg-[var(--bg-soft)] border border-[var(--border-subtle)] rounded-[var(--radius-xl)] shadow-[var(--shadow-md)] flex flex-col"
+          style={{ padding: '16px 20px', gap: '12px' }}
+        >
+           <h3 className="text-[10px] font-black text-[var(--text-subtle)] uppercase tracking-[0.2em] m-0 text-center">Controles de Sala</h3>
+           <div className="flex flex-col mx-auto w-full max-w-[95%]" style={{ gap: '8px' }}>
               {!isSharing ? (
                 <button
                   onClick={onStartSharing}
-                  className="w-full bg-[var(--energy)] hover:bg-[var(--energy-hover)] text-white font-black py-4 rounded-[var(--radius-lg)] transition-all animate-pulse shadow-lg shadow-[var(--energy)]/20 active:scale-[0.98] flex items-center justify-center gap-3"
+                  className="w-full h-11 bg-[var(--energy)] hover:bg-[var(--energy-hover)] text-white font-black rounded-xl transition-all animate-pulse shadow-md shadow-[var(--energy)]/20 active:scale-[0.98] flex items-center justify-center gap-2 text-sm"
                 >
-                  <Share2 size={24} /> INICIAR
+                  <Share2 size={18} /> INICIAR
                 </button>
               ) : (
                 <>
                   <button
                     onClick={onChangeScreen}
-                    className="w-full bg-[var(--bg-muted)] hover:bg-[var(--border-strong)] text-[var(--text-main)] font-bold py-3 px-4 rounded-[var(--radius-md)] transition-all flex items-center justify-center gap-2 text-sm border border-[var(--border-subtle)]"
+                    className="w-full h-9 bg-[var(--bg-muted)] hover:bg-[var(--border-strong)] text-[var(--text-main)] font-bold rounded-lg transition-all flex items-center justify-center gap-2 text-[11px] border border-[var(--border-subtle)]"
                   >
-                    <Monitor size={18} /> Cambiar Pantalla
+                    <Monitor size={14} /> Cambiar Pantalla
                   </button>
                   <button
                     onClick={onTogglePause}
-                    className={`w-full ${isPaused ? 'bg-[var(--warning)] text-black' : 'bg-[var(--bg-muted)] text-[var(--text-main)]'} font-bold py-3 px-4 rounded-[var(--radius-md)] transition-all flex items-center justify-center gap-2 text-sm border border-[var(--border-subtle)]`}
+                    className={`w-full h-9 ${isPaused ? 'bg-[var(--warning)] text-black' : 'bg-[var(--bg-muted)] text-[var(--text-main)]'} font-bold rounded-lg transition-all flex items-center justify-center gap-2 text-[11px] border border-[var(--border-subtle)]`}
                   >
-                    {isPaused ? <Eye size={18} /> : <EyeOff size={18} />}
+                    {isPaused ? <Eye size={14} /> : <EyeOff size={14} />}
                     {isPaused ? "Reanudar" : "Pausar Vista"}
                   </button>
                   <button
                     onClick={onStopSharing}
-                    className="w-full bg-[var(--error)] hover:bg-[var(--error)]/90 text-white font-black py-3 px-4 rounded-[var(--radius-md)] transition-all flex items-center justify-center gap-2 text-sm shadow-md"
+                    className="w-full h-9 bg-[var(--error)] hover:bg-[var(--error)]/90 text-white font-black rounded-lg transition-all flex items-center justify-center gap-2 text-[11px] shadow-sm"
                   >
-                    <StopCircle size={18} /> Detener Sala
+                    <StopCircle size={14} /> Detener Sala
                   </button>
                 </>
               )}
               <button
                 onClick={onBack}
-                className="w-full text-[var(--text-subtle)] hover:text-[var(--text-main)] font-bold py-2 text-xs transition-all uppercase tracking-widest mt-2"
+                className="w-full text-[var(--text-subtle)] hover:text-[var(--text-main)] font-bold py-1 text-[10px] transition-all uppercase tracking-widest"
               >
                 Volver al inicio
               </button>

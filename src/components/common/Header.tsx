@@ -24,20 +24,13 @@ export const Header: React.FC<HeaderProps> = ({ isConnected, onHomeClick, roomId
         {/* Dynamic Status Section */}
         <div className="flex items-center gap-4">
           {roomId && (
-            <div className="flex items-center bg-[var(--energy)]/10 px-4 py-2 rounded-xl border-2 border-[var(--energy)]/30 shadow-[var(--shadow-glow-p)] group/id relative">
-              <div className="flex flex-col items-start leading-none mr-3">
-                <span className="text-[9px] font-black text-[var(--energy)] uppercase tracking-[0.2em] mb-1">CÓDIGO SALA</span>
-                <span className="font-mono text-2xl font-black text-[var(--energy)] tracking-tighter leading-none">{roomId}</span>
-              </div>
-              <div className="h-8 w-[1px] bg-[var(--energy)]/20" />
-              <div className="ml-3 flex flex-col items-start leading-none">
-                 <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isLive ? 'text-[var(--success)]' : 'text-[var(--text-muted)]'}`}>
-                    {isLive ? 'EN VIVO' : 'PAUSADO'}
-                 </span>
-                 <div className="flex items-center gap-1.5">
-                    <div className={`w-2 h-2 rounded-full ${isLive ? 'bg-[var(--success)] animate-pulse' : 'bg-[var(--text-subtle)]'}`} />
-                    <span className="text-[10px] font-bold text-[var(--text-main)] max-w-[80px] truncate">{status}</span>
-                 </div>
+            <div 
+              className="flex items-center justify-center bg-[var(--energy)]/10 rounded-xl border-2 border-[var(--energy)]/30 shadow-[var(--shadow-glow-p)] relative"
+              style={{ padding: '8px 24px' }}
+            >
+              <div className="flex items-center justify-center" style={{ gap: '14px' }}>
+                <span className="text-[11px] font-black text-[var(--energy)] uppercase tracking-[0.2em] m-0 leading-none">CÓDIGO SALA</span>
+                <span className="font-mono text-2xl font-black text-[var(--energy)] tracking-tighter leading-none m-0">{roomId}</span>
               </div>
             </div>
           )}

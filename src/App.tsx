@@ -320,12 +320,33 @@ export default function App() {
 
   // --- Fullscreen & UI ---
   const toggleFullscreen = () => {
-    const el = videoContainerRef.current;
+    const el = videoContainerRef.current as any;
     if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen();
+    
+    try {
+      if (!document.fullscreenElement && !(document as any).webkitFullscreenElement && !(document as any).mozFullScreenElement) {
+        if (el.requestFullscreen) {
+          el.requestFullscreen().catch(() => {});
+        } else if (el.webkitRequestFullscreen) {
+          el.webkitRequestFullscreen();
+        } else if (el.mozRequestFullScreen) {
+          el.mozRequestFullScreen();
+        } else if (el.msRequestFullscreen) {
+          el.msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen();
+        } else if ((document as any).mozCancelFullScreen) {
+          (document as any).mozCancelFullScreen();
+        } else if ((document as any).msExitFullscreen) {
+          (document as any).msExitFullscreen();
+        }
+      }
+    } catch (e) {
+      console.warn("Fullscreen API not supported:", e);
     }
   };
 
@@ -334,6 +355,16 @@ export default function App() {
     document.addEventListener("fullscreenchange", cb);
     return () => document.removeEventListener("fullscreenchange", cb);
   }, []);
+
+  // --- Auto Fullscreen on Connect ---
+  useEffect(() => {
+    if (mode === "watch" && accessStatus === "granted" && hasValidFrames && !isFullscreen) {
+      const timer = setTimeout(() => {
+        toggleFullscreen();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [mode, accessStatus, hasValidFrames, isFullscreen]);
 
   return (
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] font-sans selection:bg-[var(--p-500)]/30 overflow-x-hidden flex flex-col items-center">
@@ -418,7 +449,11 @@ export default function App() {
               onToggleMute={() => setIsMuted(!isMuted)}
               onLeave={() => { stopSharing(); setMode("home"); }}
               onFramesVerified={() => setHasValidFrames(true)}
-              onManualPlay={() => remoteVideoRef.current?.play()}
+              onManualPlay={() => {
+                const videoEl = document.querySelector('video');
+                if (videoEl) videoEl.play().catch(()=>{});
+                toggleFullscreen();
+              }}
             />
           )}
         </AnimatePresence>

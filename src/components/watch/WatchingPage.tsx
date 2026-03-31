@@ -110,55 +110,55 @@ export const WatchingPage: React.FC<WatchingPageProps> = ({
           </div>
         </div>
       </div>
-
       {/* Right Column: Signal Info & Action Buttons */}
-      <div className="lg:col-span-3 flex flex-col gap-4">
-        <div className="bg-[var(--bg-soft)] border border-[var(--border-subtle)] p-5 rounded-[var(--radius-xl)] shadow-[var(--shadow-md)] flex flex-col gap-4">
-           <div className="flex flex-col gap-1">
-              <h4 className="text-[var(--text-xs)] font-black text-[var(--text-subtle)] uppercase tracking-[0.2em]">Sintonizador</h4>
-              <div className="flex items-center gap-2 bg-[var(--bg-main)] p-2 rounded-xl border border-[var(--border-subtle)]">
+      <div className="lg:col-span-3 flex flex-col gap-3">
+        <div className="bg-[var(--bg-soft)] border border-[var(--border-subtle)] p-4 rounded-3xl shadow-[var(--shadow-md)] flex flex-col gap-4">
+           {/* Section 1: Tuner */}
+           <div className="flex flex-col gap-2">
+              <label className="text-[9px] font-black text-[var(--text-subtle)] uppercase tracking-[0.25em] ml-1">Sintonizador</label>
+              <div className="flex items-center gap-1.5 bg-[var(--bg-main)] p-1.5 rounded-2xl border border-[var(--border-subtle)]">
                 <input
                   type="text"
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value.toUpperCase())}
                   placeholder="ID"
                   disabled={accessStatus === "requesting"}
-                  className="bg-transparent border-none px-2 py-1 font-mono text-xl font-black text-[var(--energy)] focus:outline-none w-24 text-center tracking-widest disabled:opacity-50"
+                  className="bg-transparent border-none px-2 py-0.5 font-mono text-lg font-black text-[var(--energy)] focus:outline-none w-20 text-center tracking-widest disabled:opacity-50"
                 />
                 <button 
                   onClick={onJoin}
                   disabled={accessStatus === "requesting"}
-                  title="Unirse a la sala"
-                  aria-label="Unirse a la sala"
-                  className="bg-[var(--energy)] hover:bg-[var(--energy-hover)] disabled:grayscale text-white font-black py-2.5 rounded-lg transition-all text-xs flex items-center justify-center min-w-[80px]"
+                  className="flex-1 bg-[var(--energy)] hover:bg-[var(--energy-hover)] disabled:grayscale text-white font-black h-10 rounded-xl transition-all text-[11px] flex items-center justify-center tracking-tighter"
                 >
                   {accessStatus === "requesting" ? "..." : "UNIRSE"}
                 </button>
               </div>
            </div>
 
-           <div className="h-[1px] bg-[var(--border-subtle)]" />
-
-           <div className="flex flex-col gap-2">
-              <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest px-1">Señal</span>
-              <div className={`p-3 rounded-xl border flex items-center gap-3 ${accessStatus === "granted" ? 'bg-[var(--success)]/10 border-[var(--success)]/20' : 'bg-[var(--bg-muted)] border-[var(--border-subtle)]'}`}>
-                 <ShieldCheck size={18} className={accessStatus === "granted" ? 'text-[var(--success)]' : 'text-[var(--text-muted)]'} />
-                 <span className={`text-xs font-bold leading-tight ${accessStatus === "granted" ? 'text-[var(--success)]' : 'text-[var(--text-main)]'}`}>
-                    {accessStatus === "granted" ? "Canal Autorizado" : accessStatus === "requesting" ? "Verificando..." : "Acceso Pendiente"}
+           {/* Section 2: Status */}
+           <div className="flex flex-col gap-1.5">
+              <span className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest px-1">Señal</span>
+              <div className={`py-2 px-3 rounded-xl border flex items-center gap-2.5 ${accessStatus === "granted" ? 'bg-[var(--success)]/10 border-[var(--success)]/20' : 'bg-white/5 border-white/5'}`}>
+                 <ShieldCheck size={14} className={accessStatus === "granted" ? 'text-[var(--success)]' : 'text-[var(--text-subtle)]'} />
+                 <span className={`text-[10px] font-black leading-none ${accessStatus === "granted" ? 'text-[var(--success)]' : 'text-[var(--text-muted)]'}`}>
+                    {accessStatus === "granted" ? "AUTORIZADO" : accessStatus === "requesting" ? "VERIFICANDO..." : "PENDIENTE"}
                  </span>
               </div>
            </div>
 
-           <div className="mt-4 flex flex-col gap-2">
+           <div className="h-[1px] bg-[var(--border-subtle)] opacity-50 my-1" />
+
+           {/* Section 3: Actions */}
+           <div className="flex flex-col gap-2">
               <button
                 onClick={onLeave}
-                className="w-full bg-[var(--error)]/10 hover:bg-[var(--error)] text-[var(--error)] hover:text-white border border-[var(--error)]/30 font-black py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-xs"
+                className="w-full h-11 bg-[var(--error)]/10 hover:bg-[var(--error)] text-[var(--error)] hover:text-white border border-[var(--error)]/20 font-black rounded-xl transition-all flex items-center justify-center gap-2 text-[11px] uppercase tracking-wider shadow-sm"
               >
                 <X size={14} /> DESCONECTAR
               </button>
               <button
-                onClick={onBack}
-                className="w-full text-[var(--text-subtle)] hover:text-[var(--text-main)] font-bold py-2 text-[10px] transition-all uppercase tracking-widest text-center"
+                onClick={() => { onLeave(); onBack(); }}
+                className="w-full text-[9px] font-black text-[var(--text-subtle)] hover:text-[var(--text-main)] py-1 transition-all uppercase tracking-[0.2em] text-center"
               >
                 Ir al inicio
               </button>
