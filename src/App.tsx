@@ -167,12 +167,6 @@ export default function App() {
       setAccessStatus("granted");
       setStatus("Acceso concedido");
       setupPeerConnection(broadcasterId);
-      // Auto-fullscreen on connection
-      setTimeout(() => {
-        if (videoContainerRef.current) {
-          videoContainerRef.current.requestFullscreen().catch(() => {});
-        }
-      }, 1000);
     } else {
       setAccessStatus("denied");
       setStatus("Acceso denegado");
@@ -318,60 +312,108 @@ export default function App() {
     });
   };
 
-  // --- Fullscreen & UI ---
-  const toggleFullscreen = () => {
-    const el = videoContainerRef.current as any;
-    if (!el) return;
-    
-    const fallbackToPseudo = () => {
-       el.classList.add('pseudo-fullscreen-fallback');
-    };
+  // --- Fullscreen & UI (Cross-browser: standard, webkit, moz, ms) ---
+  const getFullscreenElement = () =>
+    document.fullscreenElement ||
+    (document as any).webkitFullscreenElement ||
+    (document as any).mozFullScreenElement ||
+    (document as any).msFullscreenElement ||
+    null;
 
-    try {
-      if (!document.fullscreenElement && !(document as any).webkitFullscreenElement && !(document as any).mozFullScreenElement) {
-        if (el.requestFullscreen) {
-          el.requestFullscreen().catch(() => fallbackToPseudo());
-        } else if (el.webkitRequestFullscreen) {
-          el.webkitRequestFullscreen();
-          setTimeout(() => { if (!(document as any).webkitFullscreenElement) fallbackToPseudo(); }, 200);
-        } else if (el.mozRequestFullScreen) {
-          el.mozRequestFullScreen();
-          setTimeout(() => { if (!(document as any).mozFullScreenElement) fallbackToPseudo(); }, 200);
-        } else {
-           fallbackToPseudo();
-        }
-      } else {
-        // Salir Pantalla Completa...
-        el.classList.remove('pseudo-fullscreen-fallback');
-        if (document.exitFullscreen) {
-          document.exitFullscreen().catch(()=>{});
-        } else if ((document as any).webkitExitFullscreen) {
-          (document as any).webkitExitFullscreen();
-        } else if ((document as any).mozCancelFullScreen) {
-          (document as any).mozCancelFullScreen();
-        }
-      }
-    } catch (e) {
-      console.warn("Fullscreen API fully blocked, using CSS fallback", e);
-      fallbackToPseudo();
-    }
+  const requestFullscreenEl = (el: any) => {
+    if (el.requestFullscreen)           return el.requestFullscreen();
+    if (el.webkitRequestFullscreen)     return Promise.resolve(el.webkitRequestFullscreen());
+    if (el.webkitRequestFullScreen)     return Promise.resolve(el.webkitRequestFullScreen());
+    if (el.mozRequestFullScreen)        return Promise.resolve(el.mozRequestFullScreen());
+    if (el.msRequestFullscreen)         return Promise.resolve(el.msRequestFullscreen());
+    return Promise.reject(new Error('No Fullscreen API'));
   };
 
-  useEffect(() => {
-    const cb = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", cb);
-    return () => document.removeEventListener("fullscreenchange", cb);
-  }, []);
+  const exitFullscreenDoc = () => {
+    if (document.exitFullscreen)                    return document.exitFullscreen();
+    if ((document as any).webkitExitFullscreen)     return Promise.resolve((document as any).webkitExitFullscreen());
+    if ((document as any).webkitCancelFullScreen)   return Promise.resolve((document as any).webkitCancelFullScreen());
+    if ((document as any).mozCancelFullScreen)      return Promise.resolve((document as any).mozCancelFullScreen());
+    if ((document as any).msExitFullscreen)         return Promise.resolve((document as any).msExitFullscreen());
+    return Promise.resolve();
+  };
 
-  // --- Auto Fullscreen on Connect ---
+  const enterFullscreen = useCallback(() => {
+    // Try document.documentElement first so the ENTIRE browser goes fullscreen
+    const target = document.documentElement as any;
+    const container = videoContainerRef.current as any;
+
+    const applyPseudoFallback = () => {
+      if (container) container.classList.add('pseudo-fullscreen-fallback');
+      document.body.classList.add('pseudo-fullscreen-active');  // :has() fallback
+      setIsFullscreen(true);
+    };
+
+    requestFullscreenEl(target)
+      .catch(() => {
+        // Some browsers require a user-gesture element — try the container
+        if (container) return requestFullscreenEl(container);
+        throw new Error('no container');
+      })
+      .catch(applyPseudoFallback);
+  }, [videoContainerRef]);
+
+  const exitFullscreen = useCallback(() => {
+    const container = videoContainerRef.current as any;
+    if (container) container.classList.remove('pseudo-fullscreen-fallback');
+    document.body.classList.remove('pseudo-fullscreen-active');  // :has() fallback
+    setIsFullscreen(false);
+    exitFullscreenDoc().catch(() => {});
+  }, [videoContainerRef]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (getFullscreenElement() ||
+        (videoContainerRef.current as any)?.classList.contains('pseudo-fullscreen-fallback')) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  }, [enterFullscreen, exitFullscreen, videoContainerRef]);
+
+  // Listen to ALL vendor-prefixed fullscreen change events
   useEffect(() => {
-    if (mode === "watch" && accessStatus === "granted" && hasValidFrames && !isFullscreen) {
+    const onFsChange = () => {
+      const inFs = !!getFullscreenElement();
+      setIsFullscreen(inFs);
+      if (!inFs && videoContainerRef.current) {
+        (videoContainerRef.current as any).classList.remove('pseudo-fullscreen-fallback');
+      }
+    };
+    document.addEventListener('fullscreenchange',       onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    document.addEventListener('mozfullscreenchange',    onFsChange);
+    document.addEventListener('MSFullscreenChange',     onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange',       onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+      document.removeEventListener('mozfullscreenchange',    onFsChange);
+      document.removeEventListener('MSFullscreenChange',     onFsChange);
+    };
+  }, [videoContainerRef]);
+
+  // --- Auto Fullscreen: enter when watcher receives first valid frames ---
+  const autoFsTriggered = useRef(false);
+  useEffect(() => {
+    if (
+      mode === 'watch' &&
+      accessStatus === 'granted' &&
+      hasValidFrames &&
+      !autoFsTriggered.current
+    ) {
+      autoFsTriggered.current = true;
       const timer = setTimeout(() => {
-        toggleFullscreen();
-      }, 300);
+        enterFullscreen();
+      }, 400);
       return () => clearTimeout(timer);
     }
-  }, [mode, accessStatus, hasValidFrames, isFullscreen]);
+    // Reset trigger when leaving watch mode
+    if (mode !== 'watch') autoFsTriggered.current = false;
+  }, [mode, accessStatus, hasValidFrames, enterFullscreen]);
 
   return (
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] font-sans selection:bg-[var(--p-500)]/30 overflow-x-hidden flex flex-col items-center">
