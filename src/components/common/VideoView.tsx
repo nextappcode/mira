@@ -8,13 +8,14 @@ interface VideoViewProps {
   isMuted: boolean;
   label: string;
   isLive?: boolean;
+  isFullscreen?: boolean;
   className?: string;
   onFramesVerified?: () => void;
   showPauseOverlay?: boolean;
 }
 
 export const VideoView: React.FC<VideoViewProps> = ({ 
-  stream, isPaused, isMuted, label, isLive, className = "", onFramesVerified, showPauseOverlay = true 
+  stream, isPaused, isMuted, label, isLive, isFullscreen = false, className = "", onFramesVerified, showPauseOverlay = true 
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playInFlight = useRef(false);
@@ -47,7 +48,8 @@ export const VideoView: React.FC<VideoViewProps> = ({
   }, [stream]);
 
   return (
-    <div className={`relative aspect-video bg-[var(--bg-main)] rounded-[var(--radius-lg)] border border-[var(--border-subtle)] overflow-hidden ${className}`}>
+    <div className={`relative bg-[var(--bg-main)] overflow-hidden ${isFullscreen ? 'w-full h-full' : 'aspect-video rounded-[var(--radius-lg)] border border-[var(--border-subtle)]'} ${className}`}>
+
       <video 
         ref={videoRef} 
         autoPlay 
