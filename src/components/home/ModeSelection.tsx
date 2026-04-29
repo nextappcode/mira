@@ -19,8 +19,8 @@ export const ModeSelection: React.FC<ModeSelectionProps> = ({ roomId, setRoomId,
         background: 'var(--bg-soft)',
         border: '1px solid var(--border-strong)',
         borderRadius: 'var(--radius-xl)',
-        padding: '32px 28px',
-        display: 'flex', flexDirection: 'column', gap: '24px',
+        padding: '28px 28px',
+        display: 'flex', flexDirection: 'column', gap: '18px',
       }}>
         {/* Title */}
         <div>
@@ -97,6 +97,18 @@ export const ModeSelection: React.FC<ModeSelectionProps> = ({ roomId, setRoomId,
           >
             NUEVO ID
           </button>
+        </div>
+
+        {/* Créditos sutiles */}
+        <div style={{ 
+          marginTop: '2px', 
+          textAlign: 'center', 
+          fontSize: '11px', 
+          color: 'var(--text-subtle)',
+          lineHeight: '1.6'
+        }}>
+          Creado por <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Dev. Jose Luis Mamani C.</span><br />
+          Organización: <span style={{ fontWeight: 800, color: 'var(--energy)', letterSpacing: '0.5px' }}>NEXTAPPCODE.</span>
         </div>
       </div>
     </div>
