@@ -37,14 +37,14 @@ export const WatchingPage: React.FC<WatchingPageProps> = ({
       className="w-full flex flex-col lg:grid lg:grid-cols-12 gap-5 lg:h-[75vh]"
     >
       {/* Left Column: Main Video Screen */}
-      <div className="lg:col-span-9 flex flex-col shadow-2xl rounded-[var(--radius-xl)] overflow-hidden bg-black border border-[var(--border-subtle)] relative group">
-        <div ref={videoContainerRef} className="w-full h-full relative">
+      <div className={`lg:col-span-9 flex flex-col shadow-2xl overflow-hidden bg-black relative group ${isFullscreen ? 'fixed inset-0 z-[9999] rounded-none border-none' : 'rounded-[var(--radius-xl)] border border-[var(--border-subtle)]'}`}>
+        <div ref={videoContainerRef} className="w-full h-full relative flex items-center justify-center">
           <VideoView 
             stream={remoteStream} 
             isPaused={isPaused} 
             isMuted={isMuted}
             label={status || "Esperando señal..."}
-            className="w-full h-full aspect-video"
+            className={`w-full h-full transition-all duration-300 ${isFullscreen ? '' : 'aspect-video'}`}
             onFramesVerified={onFramesVerified}
             showPauseOverlay={false}
           />
