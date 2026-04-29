@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion } from 'motion/react';
 import { Monitor, StopCircle, Share2, EyeOff, Eye, UserPlus, Users, Info } from 'lucide-react';
 import { VideoView } from '../common/VideoView';
 import { Participant, PendingRequest } from '../../types';
@@ -22,138 +21,186 @@ interface SharingPageProps {
   onBack: () => void;
 }
 
+const btn = (extra?: React.CSSProperties): React.CSSProperties => ({
+  width: '100%', height: '40px', borderRadius: 'var(--radius-md)',
+  fontWeight: 700, fontSize: '12px', cursor: 'pointer',
+  border: '1px solid var(--border-strong)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+  background: 'var(--bg-muted)', color: 'var(--text-main)',
+  ...extra,
+});
+
 export const SharingPage: React.FC<SharingPageProps> = ({
   roomId, isSharing, status, isPaused, localVideoRef, stream,
   pendingRequests, participants, onStartSharing, onStopSharing,
   onTogglePause, onChangeScreen, onApprove, onDeny, onBack
 }) => {
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.98 }}
-      className="w-full flex flex-col lg:grid lg:grid-cols-12 gap-5 lg:h-[75vh]"
-    >
-      {/* Left Column: Video Preview */}
-      <div className="lg:col-span-8 flex flex-col gap-4">
-        
-        <div className="flex-1 bg-[var(--bg-soft)] border border-[var(--border-subtle)] p-4 rounded-[var(--radius-xl)] shadow-[var(--shadow-md)] flex flex-col">
-          <div className="relative flex-1 min-h-[300px]">
-            <VideoView 
-              stream={stream} 
-              isPaused={isPaused} 
-              isMuted={true}
-              label="Vista previa de pantalla"
-              className="w-full h-full rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)]"
-            />
-            {!isSharing && (
-               <div className="absolute bottom-4 left-4 right-4 p-3 bg-blue-500/10 border border-blue-500/20 backdrop-blur-md rounded-xl flex items-center gap-3 text-xs font-bold text-blue-400 z-10">
-                  <Info size={16} />
-                  <span>Activa "Compartir audio" al iniciar para transmitir sonido.</span>
-               </div>
-            )}
-          </div>
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '1fr 260px',
+      gap: '16px',
+      height: '75vh',
+      width: '100%',
+    }}>
+      {/* Left: video preview */}
+      <div style={{
+        background: 'var(--bg-soft)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--radius-lg)',
+        overflow: 'hidden',
+        position: 'relative',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ flex: 1, position: 'relative' }}>
+          <VideoView
+            stream={stream}
+            isPaused={isPaused}
+            isMuted={true}
+            label="Vista previa"
+            className="w-full h-full"
+          />
+          {!isSharing && (
+            <div style={{
+              position: 'absolute', bottom: '12px', left: '12px', right: '12px',
+              background: 'rgba(37,99,235,0.15)',
+              border: '1px solid rgba(37,99,235,0.3)',
+              borderRadius: 'var(--radius-md)',
+              padding: '10px 14px',
+              fontSize: '11px', fontWeight: 600,
+              color: '#93c5fd',
+              display: 'flex', alignItems: 'center', gap: '8px',
+            }}>
+              <Info size={14} />
+              Activa "Compartir audio" al iniciar para transmitir sonido.
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Right Column: Controls & Info */}
-      <div className="lg:col-span-4 flex flex-col overflow-hidden" style={{ gap: '16px' }}>
-        <div 
-          className="bg-[var(--bg-soft)] border border-[var(--border-subtle)] rounded-[var(--radius-xl)] shadow-[var(--shadow-md)] flex flex-col"
-          style={{ padding: '16px 20px', gap: '12px' }}
-        >
-           <h3 className="text-[10px] font-black text-[var(--text-subtle)] uppercase tracking-[0.2em] m-0 text-center">Controles de Sala</h3>
-           <div className="flex flex-col mx-auto w-full max-w-[95%]" style={{ gap: '8px' }}>
-              {!isSharing ? (
-                <button
-                  onClick={onStartSharing}
-                  className="w-full h-11 bg-[var(--energy)] hover:bg-[var(--energy-hover)] text-white font-black rounded-xl transition-all animate-pulse shadow-md shadow-[var(--energy)]/20 active:scale-[0.98] flex items-center justify-center gap-2 text-sm"
-                >
-                  <Share2 size={18} /> INICIAR
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={onChangeScreen}
-                    className="w-full h-9 bg-[var(--bg-muted)] hover:bg-[var(--border-strong)] text-[var(--text-main)] font-bold rounded-lg transition-all flex items-center justify-center gap-2 text-[11px] border border-[var(--border-subtle)]"
-                  >
-                    <Monitor size={14} /> Cambiar Pantalla
-                  </button>
-                  <button
-                    onClick={onTogglePause}
-                    className={`w-full h-9 ${isPaused ? 'bg-[var(--warning)] text-black' : 'bg-[var(--bg-muted)] text-[var(--text-main)]'} font-bold rounded-lg transition-all flex items-center justify-center gap-2 text-[11px] border border-[var(--border-subtle)]`}
-                  >
-                    {isPaused ? <Eye size={14} /> : <EyeOff size={14} />}
-                    {isPaused ? "Reanudar" : "Pausar Vista"}
-                  </button>
-                  <button
-                    onClick={onStopSharing}
-                    className="w-full h-9 bg-[var(--error)] hover:bg-[var(--error)]/90 text-white font-black rounded-lg transition-all flex items-center justify-center gap-2 text-[11px] shadow-sm"
-                  >
-                    <StopCircle size={14} /> Detener Sala
-                  </button>
-                </>
-              )}
-              <button
-                onClick={onBack}
-                className="w-full text-[var(--text-subtle)] hover:text-[var(--text-main)] font-bold py-1 text-[10px] transition-all uppercase tracking-widest"
-              >
-                Volver al inicio
+      {/* Right: controls */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden' }}>
+
+        {/* Room code */}
+        <div style={{
+          background: 'var(--bg-soft)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '14px 16px',
+        }}>
+          <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-subtle)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>
+            Código de sala
+          </p>
+          <p style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '28px', fontWeight: 700,
+            color: 'var(--energy)', letterSpacing: '6px',
+            textAlign: 'center',
+          }}>
+            {roomId}
+          </p>
+          <p style={{ fontSize: '9px', color: 'var(--text-subtle)', textAlign: 'center', marginTop: '4px' }}>
+            {status}
+          </p>
+        </div>
+
+        {/* Controls */}
+        <div style={{
+          background: 'var(--bg-soft)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '14px 16px',
+          display: 'flex', flexDirection: 'column', gap: '8px',
+        }}>
+          <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-subtle)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>
+            Controles
+          </p>
+
+          {!isSharing ? (
+            <button onClick={onStartSharing} style={btn({ background: 'var(--energy)', color: '#fff', border: 'none', height: '44px', fontSize: '13px' })}>
+              <Share2 size={16} /> INICIAR
+            </button>
+          ) : (
+            <>
+              <button onClick={onChangeScreen} style={btn()}>
+                <Monitor size={14} /> Cambiar pantalla
               </button>
-           </div>
-        </div>
-
-        {/* Requests & Participants Area */}
-        <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar">
-          {isSharing && pendingRequests.length > 0 && (
-            <div className="p-4 bg-[var(--success)]/5 border border-[var(--success)]/20 rounded-[var(--radius-lg)] space-y-3">
-              <h4 className="text-[var(--text-xs)] font-black text-[var(--success)] uppercase tracking-widest flex items-center gap-2">
-                <UserPlus size={14} /> Solicitudes ({pendingRequests.length})
-              </h4>
-              <div className="grid gap-2">
-                {pendingRequests.map(req => (
-                  <div key={req.id} className="bg-[var(--bg-main)] p-3 rounded-[var(--radius-md)] border border-[var(--border-subtle)] shadow-sm">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-8 h-8 bg-[var(--p-500)]/10 text-[var(--p-500)] rounded-full flex items-center justify-center text-sm font-black">
-                        {req.name.charAt(0)}
-                      </div>
-                      <span className="text-sm font-bold truncate">{req.name}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => onApprove(req.id)} className="flex-1 bg-[var(--success)] text-white text-[10px] font-black py-2 rounded-md uppercase">Aceptar</button>
-                      <button onClick={() => onDeny(req.id)} className="flex-1 bg-[var(--bg-muted)] text-[var(--text-subtle)] text-[10px] font-bold py-2 rounded-md uppercase">No</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+              <button onClick={onTogglePause} style={btn(isPaused ? { background: 'var(--warning)', color: '#000', border: 'none' } : {})}>
+                {isPaused ? <Eye size={14} /> : <EyeOff size={14} />}
+                {isPaused ? 'Reanudar' : 'Pausar'}
+              </button>
+              <button onClick={onStopSharing} style={btn({ background: 'var(--error)', color: '#fff', border: 'none' })}>
+                <StopCircle size={14} /> Detener
+              </button>
+            </>
           )}
 
-          {isSharing && participants.length > 0 ? (
-            <div className="bg-[var(--bg-soft)] border border-[var(--border-subtle)] p-4 rounded-[var(--radius-lg)]">
-              <h4 className="text-[var(--text-xs)] font-black text-[var(--text-subtle)] uppercase tracking-widest mb-4 flex items-center gap-2">
-                <Users size={14} /> En Línea ({participants.length})
-              </h4>
-              <div className="grid gap-2">
-                {participants.map(p => (
-                  <div key={p.id} className="flex items-center gap-3 bg-[var(--bg-main)] p-2 rounded-[var(--radius-md)] border border-[var(--border-subtle)]/50">
-                    <div className="w-6 h-6 bg-[var(--p-500)]/10 rounded-full flex items-center justify-center text-[10px] font-bold text-[var(--p-500)]">
-                      {p.name.charAt(0)}
-                    </div>
-                    <span className="text-xs font-bold truncate">{p.name}</span>
-                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--success)] animate-pulse" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : isSharing && (
-            <div className="h-32 border-2 border-dashed border-[var(--border-subtle)] rounded-[var(--radius-lg)] flex flex-col items-center justify-center opacity-30">
-               <Users size={24} className="mb-2" />
-               <span className="text-[10px] font-bold uppercase tracking-widest">Esperando audiencia</span>
-            </div>
-          )}
+          <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--text-subtle)', fontSize: '10px', cursor: 'pointer', padding: '4px', marginTop: '2px' }}>
+            ← Volver al inicio
+          </button>
         </div>
+
+        {/* Pending requests */}
+        {isSharing && pendingRequests.length > 0 && (
+          <div style={{
+            background: 'var(--bg-soft)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '12px 16px',
+            display: 'flex', flexDirection: 'column', gap: '8px',
+          }}>
+            <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--success)', letterSpacing: '1px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <UserPlus size={12} /> Solicitudes ({pendingRequests.length})
+            </p>
+            {pendingRequests.map(req => (
+              <div key={req.id} style={{
+                background: 'var(--bg-muted)',
+                borderRadius: 'var(--radius-md)',
+                padding: '10px 12px',
+                display: 'flex', flexDirection: 'column', gap: '8px',
+              }}>
+                <span style={{ fontSize: '12px', fontWeight: 600 }}>{req.name}</span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={() => onApprove(req.id)} style={{ flex: 1, height: '32px', background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '10px', fontWeight: 700, cursor: 'pointer' }}>
+                    ACEPTAR
+                  </button>
+                  <button onClick={() => onDeny(req.id)} style={{ flex: 1, height: '32px', background: 'var(--bg-main)', color: 'var(--text-muted)', border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-sm)', fontSize: '10px', fontWeight: 600, cursor: 'pointer' }}>
+                    NO
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Participants */}
+        {isSharing && participants.length > 0 && (
+          <div style={{
+            background: 'var(--bg-soft)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '12px 16px',
+            flex: 1, overflow: 'auto',
+          }}>
+            <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-subtle)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Users size={12} /> En línea ({participants.length})
+            </p>
+            {participants.map(p => (
+              <div key={p.id} style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '6px 0',
+                borderBottom: '1px solid var(--border-subtle)',
+              }}>
+                <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--bg-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: 'var(--energy)' }}>
+                  {p.name.charAt(0)}
+                </div>
+                <span style={{ fontSize: '12px', flex: 1 }}>{p.name}</span>
+                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--success)' }} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-    </motion.div>
+    </div>
   );
 };

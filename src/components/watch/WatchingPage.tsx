@@ -1,5 +1,4 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Play, Pause, Volume2, VolumeX, Maximize, X } from 'lucide-react';
 import { VideoView } from '../common/VideoView';
 import { AccessStatus } from '../../types';
@@ -29,19 +28,30 @@ export const WatchingPage: React.FC<WatchingPageProps> = ({
   isMuted, isFullscreen, hasValidFrames, hasAudio, videoContainerRef,
   onJoin, onToggleFullscreen, onToggleMute, onLeave, onFramesVerified, onManualPlay
 }) => {
-  // The video fills the entire screen as soon as access is granted.
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  🔒 LOCKED — VIDEO FULLSCREEN EXPANSION                                 ║
+  // ║  When the watcher is connected (accessStatus === 'granted'), the video   ║
+  // ║  ALWAYS occupies the full screen via position:fixed + inset:0.          ║
+  // ║                                                                          ║
+  // ║  THIS IS INTENTIONALLY DECOUPLED from the browser Fullscreen API state  ║
+  // ║  (isFullscreen). Many Smart TV browsers (WebOS / Tizen) enter native    ║
+  // ║  fullscreen but never fire 'fullscreenchange', so isFullscreen can be   ║
+  // ║  false even when the browser chrome is hidden.                           ║
+  // ║                                                                          ║
+  // ║  Rules:                                                                  ║
+  // ║    • Use inline style={{ }} — NOT Tailwind classes — for the key        ║
+  // ║      layout properties so they are never purged by the build tool.      ║
+  // ║    • Keep zIndex at 2147483647 (max) so nothing can render on top.      ║
+  // ║    • DO NOT replace this block with a conditional CSS class.            ║
+  // ║    • DO NOT move the trigger condition away from accessStatus.           ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
   // This is intentionally decoupled from `isFullscreen` (browser API state)
   // because many Smart TV browsers don't reliably fire fullscreenchange events.
   const isConnected = accessStatus === 'granted';
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.98 }}
-      className="w-full flex flex-col lg:grid lg:grid-cols-12 gap-5 lg:h-[75vh]"
-    >
-      {/* ── FULLSCREEN VIDEO OVERLAY (shown when connected) ── */}
+    <div style={{ width: '100%' }}>
+      {/* ── 🔒 LOCKED: FULLSCREEN VIDEO OVERLAY (shown when connected) ── */}
       {isConnected && (
         <div
           style={{
@@ -76,180 +86,249 @@ export const WatchingPage: React.FC<WatchingPageProps> = ({
             />
           </div>
 
-          {/* Pause overlay */}
-          <AnimatePresence>
-            {isPaused && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                style={{ position: 'absolute', inset: 0, zIndex: 10 }}
-                className="flex flex-col items-center justify-center bg-black/70 backdrop-blur-xl"
-              >
-                <div className="w-20 h-20 bg-[var(--warning)]/20 rounded-full flex items-center justify-center mb-6 border border-[var(--warning)]/30">
-                  <Pause className="text-[var(--warning)] w-10 h-10" />
-                </div>
-                <h3 className="text-2xl font-black text-white mb-2 uppercase italic">Pausado</h3>
-              </motion.div>
-            )}
+          {/* Pause overlay — minimal */}
+          {isPaused && (
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 10,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,0,0.75)',
+            }}>
+              <Pause size={48} color="#d97706" />
+              <p style={{ color: '#d97706', fontWeight: 700, fontSize: '18px', marginTop: '16px', letterSpacing: '3px', textTransform: 'uppercase' }}>
+                Pausado
+              </p>
+            </div>
+          )}
 
-            {/* Manual play overlay (needed for autoplay policy on some TVs) */}
-            {status.includes('Conectado') && !hasValidFrames && !isPaused && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                style={{ position: 'absolute', inset: 0, zIndex: 20 }}
-                className="flex flex-col items-center justify-center bg-black/90 backdrop-blur-md"
+          {/* Manual play overlay — minimal, needed for autoplay policy on some TVs */}
+          {status.includes('Conectado') && !hasValidFrames && !isPaused && (
+            <div style={{
+              position: 'absolute', inset: 0, zIndex: 20,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,0,0.9)',
+            }}>
+              <button
+                onClick={onManualPlay}
+                style={{
+                  width: '80px', height: '80px', borderRadius: '50%',
+                  background: 'var(--energy)', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
               >
-                <button
-                  onClick={onManualPlay}
-                  className="w-28 h-28 bg-[var(--p-500)] rounded-full flex items-center justify-center shadow-[var(--shadow-glow-p)] hover:scale-110 transition-transform animate-pulse"
-                >
-                  <Play className="text-white w-14 h-14 ml-2 fill-current" />
-                </button>
-                <p className="text-[var(--p-500)] font-black mt-6 text-xl tracking-widest uppercase">
-                  Sintonizar
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                <Play size={36} color="#fff" fill="#fff" style={{ marginLeft: '4px' }} />
+              </button>
+              <p style={{ color: 'var(--energy)', fontWeight: 700, fontSize: '14px', marginTop: '16px', letterSpacing: '3px', textTransform: 'uppercase' }}>
+                Sintonizar
+              </p>
+            </div>
+          )}
 
-          {/* Floating HUD — visible on hover / focus */}
+          {/* HUD — visible on hover, minimal */}
           <div
-            style={{ position: 'absolute', inset: 0, zIndex: 30, pointerEvents: 'none' }}
-            className="flex flex-col justify-between p-5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-t from-black/70 via-transparent to-black/70"
+            style={{
+              position: 'absolute', inset: 0, zIndex: 30,
+              pointerEvents: 'none',
+              display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+              padding: '16px',
+              background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 25%, transparent 75%, rgba(0,0,0,0.5) 100%)',
+              opacity: 0,
+              transition: 'opacity 0.2s',
+            }}
+            className="group-hover:opacity-100"
           >
-            {/* Top bar: status */}
-            <div className="flex justify-between items-start" style={{ pointerEvents: 'auto' }}>
-              <div className="bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-[10px] font-black text-white uppercase flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${status.includes('Conectado') ? 'bg-[var(--success)] animate-pulse' : 'bg-gray-500'}`} />
-                {status}
+            {/* Top: status */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pointerEvents: 'auto' }}>
+              <div style={{
+                background: 'rgba(0,0,0,0.6)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '4px 10px',
+                display: 'flex', alignItems: 'center', gap: '6px',
+              }}>
+                <div style={{
+                  width: '6px', height: '6px', borderRadius: '50%',
+                  background: status.includes('Conectado') ? 'var(--success)' : '#555',
+                }} />
+                <span style={{ color: '#fff', fontSize: '10px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>
+                  {status}
+                </span>
               </div>
             </div>
 
-            {/* Bottom bar: controls */}
-            <div className="flex justify-between items-end" style={{ pointerEvents: 'auto' }}>
-              {/* Leave button */}
+            {/* Bottom: controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', pointerEvents: 'auto' }}>
               <button
                 onClick={onLeave}
-                className="bg-[var(--error)]/20 hover:bg-[var(--error)] border border-[var(--error)]/40 text-[var(--error)] hover:text-white px-4 py-2 rounded-xl font-black text-[11px] uppercase tracking-wider flex items-center gap-2 transition-all"
+                style={{
+                  background: 'rgba(220,38,38,0.2)',
+                  border: '1px solid rgba(220,38,38,0.4)',
+                  color: '#f87171', borderRadius: 'var(--radius-md)',
+                  padding: '6px 14px', fontWeight: 700, fontSize: '11px',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+                  textTransform: 'uppercase', letterSpacing: '1px',
+                }}
               >
-                <X size={14} /> Salir
+                <X size={12} /> Salir
               </button>
 
-              {/* Audio / fullscreen controls */}
-              <div className="flex gap-2">
+              <div style={{ display: 'flex', gap: '8px' }}>
                 {hasAudio && (
                   <button
                     onClick={onToggleMute}
                     title={isMuted ? 'Activar sonido' : 'Silenciar'}
-                    className={`p-2.5 rounded-lg border border-white/10 ${isMuted ? 'bg-[var(--error)] text-white' : 'bg-white/10 text-white'}`}
+                    style={{
+                      background: isMuted ? 'var(--error)' : 'rgba(255,255,255,0.1)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '8px', cursor: 'pointer', color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
                   >
-                    {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                    {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                   </button>
                 )}
                 <button
                   onClick={onToggleFullscreen}
                   title="Pantalla completa"
-                  className="bg-white/10 p-2.5 rounded-lg border border-white/10 text-white hover:bg-[var(--p-500)] hover:text-black transition-all"
+                  style={{
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px', cursor: 'pointer', color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
                 >
-                  <Maximize size={18} />
+                  <Maximize size={16} />
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
+      {/* ── END OF 🔒 LOCKED BLOCK ── */}
 
       {/* ── NORMAL LAYOUT (shown while joining / not yet connected) ── */}
-      {/* Left Column: Video preview while waiting */}
-      <div className="lg:col-span-9 flex flex-col shadow-2xl rounded-[var(--radius-xl)] overflow-hidden bg-black border border-[var(--border-subtle)] relative group">
-        <div
-          ref={isConnected ? undefined : videoContainerRef}
-          className="w-full h-full relative"
-        >
-          <VideoView
-            stream={remoteStream}
-            isPaused={isPaused}
-            isMuted={isMuted}
-            label={status || 'Esperando señal...'}
-            className="w-full h-full aspect-video"
-            onFramesVerified={onFramesVerified}
-            showPauseOverlay={false}
-          />
-        </div>
-      </div>
-
-      {/* Right Column: Signal Info & Action Buttons */}
-      <div className="lg:col-span-3 flex flex-col gap-3">
-        <div className="bg-[var(--bg-soft)] border border-[var(--border-subtle)] p-4 rounded-3xl shadow-[var(--shadow-md)] flex flex-col gap-4">
-          {/* Section 1: Tuner */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[9px] font-black text-[var(--text-subtle)] uppercase tracking-[0.25em] ml-1">
-              Sintonizador
-            </label>
-            <div className="flex items-center gap-1.5 bg-[var(--bg-main)] p-1.5 rounded-2xl border border-[var(--border-subtle)]">
-              <input
-                type="text"
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                placeholder="ID"
-                disabled={accessStatus === 'requesting'}
-                className="bg-transparent border-none px-2 py-0.5 font-mono text-lg font-black text-[var(--energy)] focus:outline-none w-20 text-center tracking-widest disabled:opacity-50"
+      {!isConnected && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 260px',
+          gap: '16px',
+          height: '75vh',
+        }}>
+          {/* Video placeholder */}
+          <div style={{
+            background: '#000',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
+          }}>
+            <div ref={videoContainerRef} style={{ width: '100%', height: '100%' }}>
+              <VideoView
+                stream={remoteStream}
+                isPaused={isPaused}
+                isMuted={isMuted}
+                label={status || 'Esperando señal...'}
+                className="w-full h-full"
+                onFramesVerified={onFramesVerified}
+                showPauseOverlay={false}
               />
-              <button
-                onClick={onJoin}
-                disabled={accessStatus === 'requesting'}
-                className="flex-1 bg-[var(--energy)] hover:bg-[var(--energy-hover)] disabled:grayscale text-white font-black h-10 rounded-xl transition-all text-[11px] flex items-center justify-center tracking-tighter"
-              >
-                {accessStatus === 'requesting' ? '...' : 'UNIRSE'}
-              </button>
             </div>
           </div>
 
-          {/* Section 2: Status */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest px-1">
-              Señal
-            </span>
-            <div
-              className={`py-2 px-3 rounded-xl border flex items-center gap-2.5 ${
-                accessStatus === 'granted'
-                  ? 'bg-[var(--success)]/10 border-[var(--success)]/20'
-                  : 'bg-white/5 border-white/5'
-              }`}
-            >
-              <ShieldCheck
-                size={14}
-                className={accessStatus === 'granted' ? 'text-[var(--success)]' : 'text-[var(--text-subtle)]'}
-              />
-              <span
-                className={`text-[10px] font-black leading-none ${
-                  accessStatus === 'granted' ? 'text-[var(--success)]' : 'text-[var(--text-muted)]'
-                }`}
-              >
-                {accessStatus === 'granted'
-                  ? 'AUTORIZADO'
-                  : accessStatus === 'requesting'
-                  ? 'VERIFICANDO...'
-                  : 'PENDIENTE'}
-              </span>
+          {/* Join panel */}
+          <div style={{
+            background: 'var(--bg-soft)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '20px 16px',
+            display: 'flex', flexDirection: 'column', gap: '16px',
+          }}>
+            {/* Tuner section */}
+            <div>
+              <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-subtle)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '8px' }}>
+                Sintonizador
+              </p>
+              <div style={{
+                display: 'flex', gap: '6px',
+                background: 'var(--bg-main)',
+                border: '1px solid var(--border-strong)',
+                borderRadius: 'var(--radius-md)',
+                padding: '6px',
+              }}>
+                <input
+                  type="text"
+                  value={roomId}
+                  onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+                  placeholder="ID"
+                  disabled={accessStatus === 'requesting'}
+                  style={{
+                    background: 'none', border: 'none', outline: 'none',
+                    fontFamily: 'var(--font-mono)', fontSize: '18px', fontWeight: 700,
+                    color: 'var(--energy)', letterSpacing: '4px',
+                    textAlign: 'center', width: '80px',
+                  }}
+                />
+                <button
+                  onClick={onJoin}
+                  disabled={accessStatus === 'requesting'}
+                  style={{
+                    flex: 1, height: '38px',
+                    background: accessStatus === 'requesting' ? 'var(--bg-muted)' : 'var(--energy)',
+                    color: '#fff', border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    fontWeight: 700, fontSize: '11px', cursor: 'pointer',
+                    letterSpacing: '1px',
+                  }}
+                >
+                  {accessStatus === 'requesting' ? '...' : 'UNIRSE'}
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div className="h-[1px] bg-[var(--border-subtle)] opacity-50 my-1" />
+            {/* Status badge */}
+            <div>
+              <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-subtle)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>
+                Señal
+              </p>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-md)',
+                background: accessStatus === 'granted' ? 'rgba(22,163,74,0.1)' : 'var(--bg-muted)',
+                border: `1px solid ${accessStatus === 'granted' ? 'rgba(22,163,74,0.3)' : 'var(--border-subtle)'}`,
+              }}>
+                <ShieldCheck size={14} color={accessStatus === 'granted' ? 'var(--success)' : 'var(--text-subtle)'} />
+                <span style={{
+                  fontSize: '11px', fontWeight: 700,
+                  color: accessStatus === 'granted' ? 'var(--success)' : 'var(--text-muted)',
+                  letterSpacing: '0.5px',
+                }}>
+                  {accessStatus === 'granted' ? 'AUTORIZADO' : accessStatus === 'requesting' ? 'VERIFICANDO...' : 'PENDIENTE'}
+                </span>
+              </div>
+            </div>
 
-          {/* Section 3: Actions */}
-          <div className="flex flex-col gap-2">
+            <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
+
+            {/* Leave button */}
             <button
               onClick={onLeave}
-              className="w-full h-11 bg-[var(--error)]/10 hover:bg-[var(--error)] text-[var(--error)] hover:text-white border border-[var(--error)]/20 font-black rounded-xl transition-all flex items-center justify-center gap-2 text-[11px] uppercase tracking-wider shadow-sm"
+              style={{
+                width: '100%', height: '40px',
+                background: 'rgba(220,38,38,0.08)',
+                border: '1px solid rgba(220,38,38,0.2)',
+                color: 'var(--error)',
+                borderRadius: 'var(--radius-md)',
+                fontWeight: 700, fontSize: '11px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                textTransform: 'uppercase', letterSpacing: '1px',
+              }}
             >
-              <X size={14} /> DESCONECTAR
+              <X size={14} /> Desconectar
             </button>
           </div>
         </div>
-      </div>
-    </motion.div>
+      )}
+    </div>
   );
 };

@@ -270,12 +270,26 @@ export default function App() {
     safeSend({ type: "access-response", targetId: userId, granted: false });
   };
 
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  🔒 LOCKED — BROWSER FULLSCREEN (PART 1/2)                             ║
+  // ║  This block handles native browser fullscreen for Smart TVs and         ║
+  // ║  older browsers. It MUST be called synchronously inside a user-gesture  ║
+  // ║  handler (button click). DO NOT move it to a useEffect or setTimeout,  ║
+  // ║  or browsers will silently reject the request.                          ║
+  // ║                                                                          ║
+  // ║  Cascade order:                                                          ║
+  // ║    1. document.documentElement (hides browser chrome / URL bar)         ║
+  // ║    2. document.body (fallback)                                           ║
+  // ║    3. videoContainerRef (fallback)                                       ║
+  // ║    4. <video> element via webkitEnterFullscreen (old WebKit/TV)          ║
+  // ║    5. CSS pseudo-fullscreen (last resort)                                ║
+  // ║                                                                          ║
+  // ║  DO NOT modify without re-testing on Smart TV browsers.                 ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
   // Ref to remember that we already fired the native fullscreen call
   // during a user-gesture so we don't try again from a useEffect.
   const nativeFsRequested = useRef(false);
 
-  // Helper: fire the native Fullscreen API right now (must be called
-  // from inside a real user-gesture handler, e.g. a button click).
   const requestNativeFullscreenNow = (force = false) => {
     if (!force && nativeFsRequested.current) return;
     nativeFsRequested.current = true;
@@ -286,7 +300,7 @@ export default function App() {
       if (!el) return Promise.reject(new Error('no element'));
       try {
         let p;
-        if (el.requestFullscreen)         p = el.requestFullscreen();
+        if (el.requestFullscreen)              p = el.requestFullscreen();
         else if (el.webkitRequestFullscreen)   p = el.webkitRequestFullscreen();
         else if (el.webkitRequestFullScreen)   p = el.webkitRequestFullScreen();
         else if (el.mozRequestFullScreen)      p = el.mozRequestFullScreen();
@@ -307,9 +321,9 @@ export default function App() {
     tryEl(target)
       .catch(() => tryEl(document.body))
       .catch(() => tryEl(container))
-      .catch(() => tryEl(videoEl)) // Try the actual video element!
+      .catch(() => tryEl(videoEl))
       .then(() => {
-        // Force the state to true because many older TV browsers enter fullscreen
+        // Force state=true because many older TV browsers enter fullscreen
         // but completely fail to fire the 'fullscreenchange' event!
         setIsFullscreen(true);
       })
@@ -320,6 +334,7 @@ export default function App() {
         setIsFullscreen(true);
       });
   };
+  // ── END OF LOCKED BLOCK (PART 1/2) ──────────────────────────────────────────
 
   const performRequestJoin = () => {
     setAccessStatus("requesting");
@@ -365,7 +380,15 @@ export default function App() {
     });
   };
 
-  // --- Fullscreen & UI (Cross-browser: standard, webkit, moz, ms) ---
+  // ╔══════════════════════════════════════════════════════════════════════════╗
+  // ║  🔒 LOCKED — BROWSER FULLSCREEN (PART 2/2)                             ║
+  // ║  Cross-browser fullscreen helpers + event listeners.                    ║
+  // ║  Covers: standard, webkit, moz, ms vendor prefixes.                     ║
+  // ║  The enterFullscreen/exitFullscreen/toggleFullscreen functions are used  ║
+  // ║  by the HUD button in WatchingPage to exit fullscreen manually.         ║
+  // ║                                                                          ║
+  // ║  DO NOT remove vendor prefixes. Old Smart TVs still need them.          ║
+  // ╚══════════════════════════════════════════════════════════════════════════╝
   const getFullscreenElement = () =>
     document.fullscreenElement ||
     (document as any).webkitFullscreenElement ||
@@ -392,19 +415,15 @@ export default function App() {
   };
 
   const enterFullscreen = useCallback(() => {
-    // Try document.documentElement first so the ENTIRE browser goes fullscreen
     const target = document.documentElement as any;
     const container = videoContainerRef.current as any;
-
     const applyPseudoFallback = () => {
       if (container) container.classList.add('pseudo-fullscreen-fallback');
-      document.body.classList.add('pseudo-fullscreen-active');  // :has() fallback
+      document.body.classList.add('pseudo-fullscreen-active');
       setIsFullscreen(true);
     };
-
     requestFullscreenEl(target)
       .catch(() => {
-        // Some browsers require a user-gesture element — try the container
         if (container) return requestFullscreenEl(container);
         throw new Error('no container');
       })
@@ -414,7 +433,7 @@ export default function App() {
   const exitFullscreen = useCallback(() => {
     const container = videoContainerRef.current as any;
     if (container) container.classList.remove('pseudo-fullscreen-fallback');
-    document.body.classList.remove('pseudo-fullscreen-active');  // :has() fallback
+    document.body.classList.remove('pseudo-fullscreen-active');
     setIsFullscreen(false);
     exitFullscreenDoc().catch(() => {});
   }, [videoContainerRef]);
@@ -449,17 +468,17 @@ export default function App() {
     };
   }, [videoContainerRef]);
 
-  // When leaving watch mode, reset the fullscreen-requested flag so the
-  // next session can fire it again.
+  // When leaving watch mode, reset the flag so the next session can fire fullscreen again.
   useEffect(() => {
     if (mode !== 'watch') {
       nativeFsRequested.current = false;
     }
   }, [mode]);
+  // ── END OF LOCKED BLOCK (PART 2/2) ──────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] font-sans selection:bg-[var(--p-500)]/30 overflow-x-hidden flex flex-col items-center">
-      <div className="w-full">
+    <div style={{ minHeight: '100vh', background: 'var(--bg-main)', color: 'var(--text-main)', fontFamily: 'var(--font-sans)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ width: '100%' }}>
         <Header 
           isConnected={isConnected} 
           onHomeClick={() => { 
@@ -478,9 +497,9 @@ export default function App() {
         />
       </div>
 
-      <main className="w-full max-w-6xl p-4 md:p-8 flex-1 flex flex-col items-center justify-center">
-        <div className="w-full">
-          <AnimatePresence mode="wait">
+      <main style={{ flex: 1, width: '100%', maxWidth: '1100px', margin: '0 auto', padding: '24px 16px' }}>
+        <div style={{ width: '100%' }}>
+
           {mode === "home" && (
             <ModeSelection 
               roomId={roomId}
@@ -545,13 +564,8 @@ export default function App() {
               }}
             />
           )}
-        </AnimatePresence>
         </div>
       </main>
-
-      <footer className="w-full p-8 text-center text-[var(--text-subtle)] text-[var(--text-xs)] font-medium">
-        <p>© nextappcode • todos los derechos reservados</p>
-      </footer>
-</div>
+    </div>
   );
 }
