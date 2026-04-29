@@ -22,7 +22,7 @@ interface SharingPageProps {
 }
 
 const btn = (extra?: React.CSSProperties): React.CSSProperties => ({
-  width: '100%', height: '40px', borderRadius: 'var(--radius-md)',
+  width: '100%', height: '36px', borderRadius: 'var(--radius-md)',
   fontWeight: 700, fontSize: '12px', cursor: 'pointer',
   border: '1px solid var(--border-strong)',
   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -79,38 +79,16 @@ export const SharingPage: React.FC<SharingPageProps> = ({
       </div>
 
       {/* Right: controls */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden' }}>
-
-        {/* Room code */}
-        <div style={{
-          background: 'var(--bg-soft)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '14px 16px',
-        }}>
-          <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-subtle)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '6px' }}>
-            Código de sala
-          </p>
-          <p style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '28px', fontWeight: 700,
-            color: 'var(--energy)', letterSpacing: '6px',
-            textAlign: 'center',
-          }}>
-            {roomId}
-          </p>
-          <p style={{ fontSize: '9px', color: 'var(--text-subtle)', textAlign: 'center', marginTop: '4px' }}>
-            {status}
-          </p>
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', paddingRight: '4px' }}>
 
         {/* Controls */}
         <div style={{
           background: 'var(--bg-soft)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-lg)',
-          padding: '14px 16px',
-          display: 'flex', flexDirection: 'column', gap: '8px',
+          padding: '10px 14px',
+          display: 'flex', flexDirection: 'column', gap: '6px',
+          flexShrink: 0,
         }}>
           <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-subtle)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: '2px' }}>
             Controles
@@ -135,7 +113,23 @@ export const SharingPage: React.FC<SharingPageProps> = ({
             </>
           )}
 
-          <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--text-subtle)', fontSize: '10px', cursor: 'pointer', padding: '4px', marginTop: '2px' }}>
+          <button onClick={onBack} style={{ 
+            width: '100%',
+            height: '32px',
+            background: 'rgba(255,255,255,0.03)', 
+            border: '1px solid var(--border-subtle)', 
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-subtle)', 
+            fontSize: '9px', 
+            fontWeight: 600,
+            cursor: 'pointer', 
+            marginTop: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
             ← Volver al inicio
           </button>
         </div>
@@ -146,8 +140,9 @@ export const SharingPage: React.FC<SharingPageProps> = ({
             background: 'var(--bg-soft)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-lg)',
-            padding: '12px 16px',
-            display: 'flex', flexDirection: 'column', gap: '8px',
+            padding: '10px 14px',
+            display: 'flex', flexDirection: 'column', gap: '6px',
+            flexShrink: 0,
           }}>
             <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--success)', letterSpacing: '1px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <UserPlus size={12} /> Solicitudes ({pendingRequests.length})
@@ -179,8 +174,8 @@ export const SharingPage: React.FC<SharingPageProps> = ({
             background: 'var(--bg-soft)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-lg)',
-            padding: '12px 16px',
-            flex: 1, overflow: 'auto',
+            padding: '10px 14px',
+            flexShrink: 0,
           }}>
             <p style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-subtle)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Users size={12} /> En línea ({participants.length})

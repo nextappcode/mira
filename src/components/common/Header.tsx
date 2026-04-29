@@ -9,13 +9,13 @@ interface HeaderProps {
   isLive?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ isConnected, onHomeClick, roomId }) => {
+export const Header: React.FC<HeaderProps> = ({ isConnected, onHomeClick, roomId, status }) => {
   return (
     <header
       style={{
         borderBottom: '1px solid var(--border-subtle)',
         background: 'var(--bg-soft)',
-        height: '48px',
+        height: '56px',
         display: 'flex',
         alignItems: 'center',
         padding: '0 16px',
@@ -37,20 +37,35 @@ export const Header: React.FC<HeaderProps> = ({ isConnected, onHomeClick, roomId
 
       <div style={{ flex: 1 }} />
 
-      {/* Room ID badge */}
+      {/* Room ID badge & Status */}
       {roomId && (
-        <span style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '13px', fontWeight: 700,
-          color: 'var(--energy)',
-          background: 'var(--bg-muted)',
-          border: '1px solid var(--border-strong)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '2px 10px',
-          letterSpacing: '2px',
-        }}>
-          {roomId}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {status && (
+            <span style={{ fontSize: '10px', color: 'var(--text-subtle)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>
+              {status}
+            </span>
+          )}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            background: 'var(--bg-muted)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 'var(--radius-md)',
+            padding: '2px 10px',
+          }}>
+            <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-subtle)', letterSpacing: '1px', textTransform: 'uppercase' }}>
+              SALA
+            </span>
+            <span style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '22px', fontWeight: 700,
+              color: 'var(--energy)',
+              letterSpacing: '2px',
+              lineHeight: 1,
+            }}>
+              {roomId}
+            </span>
+          </div>
+        </div>
       )}
 
       {/* Online indicator */}

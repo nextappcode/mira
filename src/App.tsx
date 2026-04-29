@@ -236,7 +236,9 @@ export default function App() {
     setIsPaused(false);
     setHasValidFrames(false);
     setRemoteStream(null);
-    setStatus("Compartición finalizada");
+    setRoomId("");
+    setAccessStatus("idle");
+    setStatus("Sesión finalizada");
   };
 
   const approveAccess = async (userId: string) => {
@@ -484,7 +486,7 @@ export default function App() {
           onHomeClick={() => { 
              if (mode !== "home") {
                if (confirm('¿Quieres salir? Se detendrá la sesión.')) {
-                 if (mode === 'share') stopSharing();
+                 stopSharing();
                  setMode("home");
                }
              } else {
