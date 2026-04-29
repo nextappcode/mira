@@ -108,7 +108,7 @@ export const ModeSelection: React.FC<ModeSelectionProps> = ({ roomId, setRoomId,
           lineHeight: '1.6'
         }}>
           Creado por <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>Dev. Jose Luis Mamani C.</span><br />
-          Organización: <span style={{ fontWeight: 800, color: 'var(--energy)', letterSpacing: '0.5px' }}>NEXTAPPCODE.</span>
+          Organización: <span style={{ fontWeight: 800, color: 'var(--energy)', letterSpacing: '0.5px' }}>NEXTAPPCODE</span>
         </div>
       </div>
     </div>
