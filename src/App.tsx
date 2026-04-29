@@ -270,6 +270,52 @@ export default function App() {
     safeSend({ type: "access-response", targetId: userId, granted: false });
   };
 
+  // Ref to remember that we already fired the native fullscreen call
+  // during a user-gesture so we don't try again from a useEffect.
+  const nativeFsRequested = useRef(false);
+
+  // Helper: fire the native Fullscreen API right now (must be called
+  // from inside a real user-gesture handler, e.g. a button click).
+  const requestNativeFullscreenNow = (force = false) => {
+    if (!force && nativeFsRequested.current) return;
+    nativeFsRequested.current = true;
+    
+    const target = document.documentElement as any;
+    
+    const tryEl = (el: any): Promise<void> => {
+      if (!el) return Promise.reject(new Error('no element'));
+      try {
+        let p;
+        if (el.requestFullscreen)         p = el.requestFullscreen();
+        else if (el.webkitRequestFullscreen)   p = el.webkitRequestFullscreen();
+        else if (el.webkitRequestFullScreen)   p = el.webkitRequestFullScreen();
+        else if (el.mozRequestFullScreen)      p = el.mozRequestFullScreen();
+        else if (el.msRequestFullscreen)       p = el.msRequestFullscreen();
+        else if (el.webkitEnterFullscreen)     p = el.webkitEnterFullscreen(); // Specific to video element on older webkit
+        else return Promise.reject(new Error('No Fullscreen API'));
+        
+        // Some older TVs return undefined instead of a Promise
+        return p instanceof Promise ? p : Promise.resolve();
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    };
+
+    const container = videoContainerRef.current as any;
+    const videoEl = container ? container.querySelector('video') : document.querySelector('video');
+
+    tryEl(target)
+      .catch(() => tryEl(document.body))
+      .catch(() => tryEl(container))
+      .catch(() => tryEl(videoEl)) // Try the actual video element!
+      .catch(() => {
+        // Native API fully blocked → CSS pseudo-fullscreen
+        if (container) container.classList.add('pseudo-fullscreen-fallback');
+        document.body.classList.add('pseudo-fullscreen-active');
+        setIsFullscreen(true);
+      });
+  };
+
   const performRequestJoin = () => {
     setAccessStatus("requesting");
     if (safeSend({ type: "join", room: roomId })) {
@@ -285,6 +331,8 @@ export default function App() {
     if (!roomId) return alert("Ingresa ID de sala");
     setAccessStatus("requesting");
     setStatus("Verificando sala...");
+    // ← Fire fullscreen HERE, inside the user-gesture, so the browser allows it.
+    requestNativeFullscreenNow();
     safeSend({ type: "check-room", room: roomId });
   };
 
@@ -396,24 +444,13 @@ export default function App() {
     };
   }, [videoContainerRef]);
 
-  // --- Auto Fullscreen: enter when watcher receives first valid frames ---
-  const autoFsTriggered = useRef(false);
+  // When leaving watch mode, reset the fullscreen-requested flag so the
+  // next session can fire it again.
   useEffect(() => {
-    if (
-      mode === 'watch' &&
-      accessStatus === 'granted' &&
-      hasValidFrames &&
-      !autoFsTriggered.current
-    ) {
-      autoFsTriggered.current = true;
-      const timer = setTimeout(() => {
-        enterFullscreen();
-      }, 400);
-      return () => clearTimeout(timer);
+    if (mode !== 'watch') {
+      nativeFsRequested.current = false;
     }
-    // Reset trigger when leaving watch mode
-    if (mode !== 'watch') autoFsTriggered.current = false;
-  }, [mode, accessStatus, hasValidFrames, enterFullscreen]);
+  }, [mode]);
 
   return (
     <div className="min-h-screen bg-[var(--bg-main)] text-[var(--text-main)] font-sans selection:bg-[var(--p-500)]/30 overflow-x-hidden flex flex-col items-center">
@@ -451,10 +488,8 @@ export default function App() {
               onWatch={() => {
                 setMode("watch");
                 if (roomId.length === 5) {
-                   // Minimal delay to ensure transition is smooth but gesture is kept
-                   setTimeout(() => {
-                     requestJoin();
-                   }, 50);
+                   // Call synchronously to preserve the user gesture for Fullscreen API
+                   requestJoin();
                 }
               }} 
             />
@@ -501,7 +536,7 @@ export default function App() {
               onManualPlay={() => {
                 const videoEl = document.querySelector('video');
                 if (videoEl) videoEl.play().catch(()=>{});
-                toggleFullscreen();
+                requestNativeFullscreenNow(true);
               }}
             />
           )}
