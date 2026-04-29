@@ -33,14 +33,7 @@ export default function App() {
   const { 
     peerConnections, iceCandidateQueue, streamRef, participants, setParticipants,
     createPeerConnection, startLocalStream, stopAll, sendSignal, isSharingRef 
-  } = useWebRTC(safeSend, (targetId) => {
-    // If the connection drops unexpectedly and we are watching
-    if (mode === "watch") {
-      setStatus("Conexión perdida");
-      setRemoteStream(null);
-      setHasAudio(false);
-    }
-  });
+  } = useWebRTC(safeSend);
 
   // --- Signaling Logic ---
   useEffect(() => {

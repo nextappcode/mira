@@ -9,16 +9,12 @@ const STUN_SERVERS = {
   ],
 };
 
-export const useWebRTC = (safeSend: (data: any) => void, onConnectionLost?: (targetId: string) => void) => {
+export const useWebRTC = (safeSend: (data: any) => void) => {
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const iceCandidateQueue = useRef<Map<string, any[]>>(new Map());
   const streamRef = useRef<MediaStream | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const isSharingRef = useRef(false);
-  const onConnectionLostRef = useRef(onConnectionLost);
-
-  // Update ref to always have the latest callback without triggering hook re-renders
-  onConnectionLostRef.current = onConnectionLost;
 
   const sendSignal = useCallback((data: any, roomId: string, targetId?: string, isRenegotiation = false) => {
     safeSend({
@@ -43,9 +39,6 @@ export const useWebRTC = (safeSend: (data: any) => void, onConnectionLost?: (tar
       if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed" || pc.iceConnectionState === "closed") {
         peerConnections.current.delete(targetId);
         setParticipants(prev => prev.filter(p => p.id !== targetId));
-        if (onConnectionLostRef.current) {
-          onConnectionLostRef.current(targetId);
-        }
       }
     };
 

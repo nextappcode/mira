@@ -123,29 +123,6 @@ export const WatchingPage: React.FC<WatchingPageProps> = ({
             </div>
           )}
 
-          {/* Disconnected / Finished Overlay */}
-          {!remoteStream && (
-            <div style={{
-              position: 'absolute', inset: 0, zIndex: 15,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              background: '#000',
-            }}>
-              <Monitor size={56} color="var(--text-subtle)" style={{ marginBottom: '16px', opacity: 0.5 }} />
-              <p style={{ 
-                color: status.includes('perdida') ? 'var(--error)' : 'var(--text-main)', 
-                fontWeight: 700, fontSize: '20px', letterSpacing: '2px', textTransform: 'uppercase',
-                textAlign: 'center', padding: '0 24px'
-              }}>
-                {status || 'Esperando señal...'}
-              </p>
-              {status.includes('perdida') && (
-                <p style={{ color: 'var(--text-subtle)', fontSize: '14px', marginTop: '12px', textAlign: 'center', padding: '0 24px' }}>
-                  El transmisor ha perdido su conexión a internet.
-                </p>
-              )}
-            </div>
-          )}
-
           {/* HUD — visible on hover, minimal */}
           <div
             style={{
