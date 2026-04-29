@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Play, Pause, Volume2, VolumeX, Maximize, Minimize, X } from 'lucide-react';
 import { VideoView } from '../common/VideoView';
@@ -107,23 +108,22 @@ export const WatchingPage: React.FC<WatchingPageProps> = ({
     <>
       {/*
         ══ FULLSCREEN OVERLAY ══════════════════════════════════════════
-        Rendered as a SIBLING of motion.div, NOT a child.
-        Reason: Framer Motion applies CSS `transform: scale()` during
-        animation which creates a new stacking context and TRAPS any
-        `position:fixed` descendants — they become relative to the
-        animated element, not the viewport.
-        By placing this div outside the motion.div it correctly covers
-        the full TV screen with z-index at the maximum possible value.
+        Uses createPortal to render directly into document.body,
+        bypassing ALL ancestor constraints:
+          - overflow-x: hidden on App root (traps position:fixed)
+          - CSS transforms from Framer Motion (trap position:fixed)
+        This guarantees true viewport coverage on all browsers / TVs.
         ════════════════════════════════════════════════════════════════
       */}
-      {isFullscreen && (
+      {isFullscreen && createPortal(
         <div
           ref={videoContainerRef}
           className="fixed inset-0 bg-black group"
           style={{ zIndex: 2147483647 }}
         >
           {VideoContent}
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Normal page layout ───────────────────────────────────────── */}
