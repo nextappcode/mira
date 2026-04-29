@@ -308,6 +308,11 @@ export default function App() {
       .catch(() => tryEl(document.body))
       .catch(() => tryEl(container))
       .catch(() => tryEl(videoEl)) // Try the actual video element!
+      .then(() => {
+        // Force the state to true because many older TV browsers enter fullscreen
+        // but completely fail to fire the 'fullscreenchange' event!
+        setIsFullscreen(true);
+      })
       .catch(() => {
         // Native API fully blocked → CSS pseudo-fullscreen
         if (container) container.classList.add('pseudo-fullscreen-fallback');
